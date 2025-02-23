@@ -5,24 +5,41 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // Detailed CORS configuration
+  // CORS configuration
   app.enableCors({
-    origin: ['http://localhost:3000', 'http://localhost:4200'], // Add your frontend URLs
+    origin: ['http://localhost:3000', 'http://localhost:4200'],
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH', 'HEAD'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
     credentials: true,
     maxAge: 3600,
   });
 
+  // Enhanced Swagger configuration
   const config = new DocumentBuilder()
     .setTitle('Nomadly API')
-    .setDescription('The Nomadly API description')
+    .setDescription('Digital nomad tools for currency conversion, translation, and tax-free shopping')
     .setVersion('1.0')
-    .addTag('Translation', 'Text translation endpoints')
+    .addTag('Bill Analysis', 'Basic bill analysis and currency conversion')
+    .addTag('Tax Free Shopping', 'Tax refund eligibility and processing for tourists')
+    .addTag('Translation', 'Text and document translation services')
+    .addServer('http://localhost:3000', 'Local development')
     .build();
-    
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api', app, document);
+
+  const document = SwaggerModule.createDocument(app, config, {
+    operationIdFactory: (
+      controllerKey: string,
+      methodKey: string
+    ) => methodKey,
+    deepScanRoutes: true,
+  });
+  
+  SwaggerModule.setup('api', app, document, {
+    swaggerOptions: {
+      tagsSorter: 'alpha',
+      operationsSorter: 'alpha',
+      docExpansion: 'none',
+    },
+  });
 
   await app.listen(3000);
 }
