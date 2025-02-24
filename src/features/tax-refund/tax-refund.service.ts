@@ -168,16 +168,11 @@ export class TaxRefundService {
       vatRate: 0,
       minAmount: 0,
       refundRate: 0,
-      process: 'State-specific tax exemption',
-      locations: ['Duty-free shops', 'Participating retailers'],
-      timeLimit: 'Immediate',
+      process: 'No VAT system',
+      locations: [],
+      timeLimit: 'N/A',
       refundAvailable: false,
-      message: 'USA does not have a VAT refund system. Tax-free shopping available in some states for immediate exemption.',
-      alternatives: [
-        'Shop at duty-free stores',
-        'Use state tax exemption forms where available',
-        'Visit tax-free shopping districts'
-      ]
+      message: 'The United States does not have a VAT refund system.'
     },
     'CN': { // China
       vatRate: 13,
@@ -335,8 +330,24 @@ export class TaxRefundService {
       };
     }
 
+    // Special case for US
+    if (country.toUpperCase() === 'US') {
+      return {
+        eligible: false,
+        country: 'US',
+        message: rules.message,
+        locations: rules.locations,
+        documentation: rules.documentation
+      };
+    }
+
     const eligible = amount >= rules.minAmount;
     const potentialRefund = eligible ? (amount * rules.refundRate / 100) : 0;
+
+    // Default operator text if none specified
+    const operatorText = rules.operators?.length 
+      ? `Use ${rules.operators.join(' or ')} services`
+      : 'Check with tax refund operators at the airport';
 
     return {
       eligible,
@@ -345,9 +356,9 @@ export class TaxRefundService {
       minPurchaseAmount: rules.minAmount,
       potentialRefund: Math.round(potentialRefund * 100) / 100,
       process: rules.process,
-      locations: rules.locations,
-      operators: rules.operators,
-      documentation: rules.documentation,
+      locations: rules.locations || [],
+      operators: rules.operators || [],
+      documentation: rules.documentation || [],
       timeLimit: rules.timeLimit,
       requirements: [
         'Original receipt',
@@ -360,7 +371,7 @@ export class TaxRefundService {
         'Combine purchases from same store',
         'Keep all packaging and tags',
         'Allow extra time at airport',
-        `Use ${rules.operators.join(' or ')} services`,
+        operatorText,
         `Minimum spend: ${rules.minAmount} ${country === 'AE' ? 'AED' : 'EUR'}`,
         'Download operator apps for digital processing'
       ],

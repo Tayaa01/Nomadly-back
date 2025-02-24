@@ -108,30 +108,54 @@ export class TaxRefundController {
 
     // Handle currency conversion if target country is provided
     if (targetCountryData && sourceCountryData.currency !== targetCountryData.currency) {
-      const convertedAmount = await this.currencyConverterService.convertCurrency(
-        sourceCountryData.currency,
-        targetCountryData.currency,
-        analysis.amount
-      );
-      
-      response.bill.convertedAmount = {
-        value: Math.round(convertedAmount.result * 100) / 100,
-        currency: targetCountryData.currency,
-        country: targetCountryData.name
+      try {
+        const convertedAmount = await this.currencyConverterService.convertCurrency(
+          sourceCountryData.currency,
+          targetCountryData.currency,
+          analysis.amount
+        );
+        
+        response.bill.convertedAmount = {
+          value: Math.round(convertedAmount.result * 100) / 100,
+          currency: targetCountryData.currency,
+          country: targetCountryData.name
+        };
+      } catch (error) {
+        console.error('Currency conversion error:', error);
+        response.bill.conversionError = 'Currency conversion failed';
+      }
+    }
+
+    // Special handling for US tax-free shopping
+    if (country.toUpperCase() === 'US') {
+      response.taxRefund = {
+        available: false,
+        message: 'The United States does not have a VAT refund system.'
       };
+      return response;
     }
 
     // Handle tax refund analysis
-    const taxInfo = await this.taxRefundService.analyzeTaxRefund(
-      analysis.amount,
-      country
-    );
+    const taxInfo = await this.taxRefundService.analyzeTaxRefund(analysis.amount, country);
     
     if (!taxInfo.eligible) {
       response.taxRefund = {
         available: false,
-        message: taxInfo.message || `To be eligible for tax refund in ${country}, purchases must be above ${taxInfo.minPurchaseAmount} ${sourceCountryData.currency}. Your purchase amount is ${analysis.amount} ${sourceCountryData.currency}.`
+        message: `To be eligible for tax refund in ${country}, purchases must be above ${taxInfo.minPurchaseAmount} ${sourceCountryData.currency}. Your purchase amount is ${analysis.amount} ${sourceCountryData.currency}`
       };
+
+      // Add converted minimum amount if target country is different
+      if (response.bill.convertedAmount) {
+        const convertedMin = await this.currencyConverterService.convertCurrency(
+          sourceCountryData.currency,
+          targetCountryData.currency,
+          taxInfo.minPurchaseAmount
+        );
+        response.taxRefund.convertedMinAmount = {
+          value: Math.round(convertedMin.result * 100) / 100,
+          currency: targetCountryData.currency
+        };
+      }
     } else {
       response.taxRefund = {
         available: true,
