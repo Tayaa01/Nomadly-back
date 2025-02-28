@@ -92,7 +92,7 @@ export class TaxRefundController {
 
     if (!sourceCountryData) {
       return {
-        error: `Country code '${country}' not recognized`
+        error: `Country code '${country}' not recognized. Please use a valid country code (e.g., FR for France).`
       };
     }
 
@@ -102,7 +102,7 @@ export class TaxRefundController {
           value: analysis.amount,
           currency: sourceCountryData.currency
         },
-        country: sourceCountryData.name
+        country: sourceCountryData.name  // Keep the country name in response
       }
     };
 
@@ -141,11 +141,11 @@ export class TaxRefundController {
     if (!taxInfo.eligible) {
       response.taxRefund = {
         available: false,
-        message: `To be eligible for tax refund in ${country}, purchases must be above ${taxInfo.minPurchaseAmount} ${sourceCountryData.currency}. Your purchase amount is ${analysis.amount} ${sourceCountryData.currency}`
+        message: taxInfo.message || `To be eligible for tax refund in ${sourceCountryData.name}, purchases must be above ${taxInfo.minPurchaseAmount} ${sourceCountryData.currency}. Your purchase amount is ${analysis.amount} ${sourceCountryData.currency}`
       };
 
       // Add converted minimum amount if target country is different
-      if (response.bill.convertedAmount) {
+      if (response.bill.convertedAmount && taxInfo.minPurchaseAmount) {
         const convertedMin = await this.currencyConverterService.convertCurrency(
           sourceCountryData.currency,
           targetCountryData.currency,
@@ -163,7 +163,7 @@ export class TaxRefundController {
           value: Math.round(taxInfo.potentialRefund * 100) / 100,
           currency: sourceCountryData.currency
         },
-        instructions: `Get your tax refund at ${taxInfo.locations.join(' or ')} before leaving ${country}. Bring your passport, original receipt, and ${taxInfo.documentation?.[0] || 'required forms'}. Must be done within ${taxInfo.timeLimit} of purchase.`,
+        instructions: `Get your tax refund at ${taxInfo.locations.join(' or ')} before leaving ${sourceCountryData.name}. Bring your passport, original receipt, and ${taxInfo.documentation?.[0] || 'required forms'}. Must be done within ${taxInfo.timeLimit} of purchase.`,
         requirements: [
           `Minimum purchase: ${taxInfo.minPurchaseAmount} ${sourceCountryData.currency}`,
           'Must be non-EU resident',
