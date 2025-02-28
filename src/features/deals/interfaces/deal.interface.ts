@@ -38,6 +38,8 @@ export interface Deal {
       discountPercentage?: number;
       availability?: string;
       redemptionInstructions?: string;
+      promoCode?: string;
+      dealType?: 'promo_code' | 'bundle' | 'sale' | 'flash_deal' | 'seasonal' | 'standard';
     };
     metadata: {
       lastUpdated: string;

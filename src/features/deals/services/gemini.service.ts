@@ -34,7 +34,6 @@ export class GeminiService {
       return this.parseGeminiResponse(text, searchResults);
     } catch (error) {
       this.logger.error('Gemini analysis error:', error);
-      // Return fallback analysis instead of throwing an error
       return this.generateFallbackAnalysis(searchResults);
     }
   }
@@ -49,45 +48,51 @@ export class GeminiService {
     }));
 
     return `
-      As a deals and discounts expert, analyze these ${category} deals and create a comprehensive report.
+      As a deals and discounts expert, analyze these ${category} deals and provide a detailed, user-friendly report.
+      Focus on practical, actionable information that shoppers can use immediately.
       
       Deals Data:
       ${JSON.stringify(deals, null, 2)}
 
-      Please provide a structured analysis in the following format:
+      Please provide a structured analysis in this exact format:
 
-      1. Top Recommendations:
-      - List the best 5 deals with their venue names, locations, and specific discounts
-      - Include why each deal is recommended
-      - Highlight any time-sensitive offers
+      TOP RECOMMENDATIONS:
+      For each of the best 5 deals:
+      - Store/Venue: [Name]
+      - Location: [Full address with coordinates if available]
+      - Deal Type: [Promo code/Sale/Bundle/etc.]
+      - Discount Details: [Specific discount amount/percentage]
+      - Promo Code: [If applicable]
+      - Valid Until: [End date if available]
+      - Why It's Great: [2-3 specific reasons]
+      - Pro Tips: [How to best use this deal]
 
-      2. Value Analysis:
-      - Calculate average discount percentage
-      - Identify the best value deal
-      - Note any unusual or standout offers
+      SAVINGS BREAKDOWN:
+      - Average Discount: [%]
+      - Best Value Deal: [Name + Why]
+      - Price Range Analysis: [Min-Max prices found]
+      - Special Conditions: [Any requirements or restrictions]
 
-      3. Location Insights:
-      - Group deals by city/area
-      - Identify areas with highest concentration of deals
-      - Note any location-specific trends
+      LOCATION INSIGHTS:
+      - Popular Areas: [List with deal counts]
+      - Transportation Tips: [How to get to major deal locations]
+      - Area-Specific Deals: [Any location-based promotions]
 
-      4. Venue Analysis:
-      - List top-rated venues
-      - Identify common venue types
-      - Note any chain vs. independent business patterns
+      SMART SHOPPING GUIDE:
+      1. Best Times to Shop: [Specific days/hours]
+      2. Loyalty Programs: [Available programs and benefits]
+      3. Stacking Strategies: [How to combine deals]
+      4. Hidden Savings: [Lesser-known ways to save]
+      5. Red Flags: [What to watch out for]
 
-      5. Smart Shopping Tips:
-      - Provide category-specific saving strategies
-      - Note best times/days for deals
-      - Mention any loyalty programs or special conditions
+      TRENDING PATTERNS:
+      - Most Popular Categories: [List with percentages]
+      - Emerging Deals: [New trends]
+      - Seasonal Opportunities: [Upcoming sales/events]
 
-      6. Trending Patterns:
-      - Identify popular deal types
-      - Note emerging trends
-      - Highlight seasonal patterns
-
-      Format the response to be easily parsed into sections.
-      Focus on concrete details and specific numbers when available.
+      Format the response to be easily readable and actionable.
+      Include specific numbers, dates, and instructions whenever possible.
+      Focus on verified deals and include any available promo codes.
     `;
   }
 
@@ -96,7 +101,6 @@ export class GeminiService {
       const sections = response.split('\n\n');
       const deals = originalResults.organic || [];
       
-      // Initialize analysis object
       const analysis: DealAnalysis = {
         recommendations: [],
         discounts: [],
@@ -112,25 +116,27 @@ export class GeminiService {
           totalDeals: deals.length,
           bestValue: {
             deal: this.findBestValueDeal(deals),
-            reason: 'Highest discount percentage with verified source',
+            reason: 'Highest combined discount and rating score',
           },
         },
       };
 
       // Parse each section
       sections.forEach(section => {
-        if (section.includes('Top Recommendations')) {
-          analysis.recommendations = this.extractRecommendations(section, deals);
-        } else if (section.includes('Smart Shopping Tips')) {
-          analysis.savingsTips = this.extractSavingsTips(section);
-        } else if (section.includes('Trending Patterns')) {
-          analysis.trending = this.extractTrends(section);
+        if (section.includes('TOP RECOMMENDATIONS')) {
+          analysis.recommendations = this.extractDetailedRecommendations(section, deals);
+        } else if (section.includes('SAVINGS BREAKDOWN')) {
+          analysis.discounts = this.extractSavingsBreakdown(section);
+        } else if (section.includes('SMART SHOPPING GUIDE')) {
+          analysis.savingsTips = this.extractSmartShoppingTips(section);
+        } else if (section.includes('TRENDING PATTERNS')) {
+          analysis.trending = this.extractDetailedTrends(section);
         }
       });
 
-      // If we don't have enough recommendations, add from original results
-      if (analysis.recommendations.length < 5) {
-        analysis.recommendations.push(...this.getTopDeals(deals, 5 - analysis.recommendations.length));
+      // Ensure we have recommendations
+      if (analysis.recommendations.length === 0) {
+        analysis.recommendations = this.getTopDeals(deals, 5);
       }
 
       return analysis;
@@ -138,6 +144,86 @@ export class GeminiService {
       this.logger.error('Error parsing Gemini response:', error);
       return this.generateFallbackAnalysis(originalResults);
     }
+  }
+
+  private extractDetailedRecommendations(section: string, originalDeals: Deal[]): Deal[] {
+    const recommendations: Deal[] = [];
+    const dealBlocks = section.split(/\d+\./g).filter(block => block.trim());
+
+    dealBlocks.forEach(block => {
+      const lines = block.split('\n').map(line => line.trim());
+      const dealInfo: any = {};
+
+      lines.forEach(line => {
+        if (line.startsWith('Store/Venue:')) dealInfo.venueName = line.split(':')[1].trim();
+        if (line.startsWith('Location:')) dealInfo.location = line.split(':')[1].trim();
+        if (line.startsWith('Deal Type:')) dealInfo.dealType = line.split(':')[1].trim();
+        if (line.startsWith('Discount Details:')) dealInfo.discount = line.split(':')[1].trim();
+        if (line.startsWith('Promo Code:')) dealInfo.promoCode = line.split(':')[1].trim();
+        if (line.startsWith('Valid Until:')) dealInfo.endDate = line.split(':')[1].trim();
+      });
+
+      // Find matching original deal
+      const matchingDeal = originalDeals.find(d => 
+        d.venue?.name?.toLowerCase().includes(dealInfo.venueName?.toLowerCase()) ||
+        dealInfo.venueName?.toLowerCase().includes(d.venue?.name?.toLowerCase())
+      );
+
+      if (matchingDeal) {
+        const enrichedDeal = {
+          ...matchingDeal,
+          dealDetails: {
+            ...matchingDeal.dealDetails,
+            promoCode: dealInfo.promoCode,
+            dealType: dealInfo.dealType,
+            endDate: dealInfo.endDate || matchingDeal.dealDetails.endDate,
+          },
+        };
+        recommendations.push(enrichedDeal);
+      }
+    });
+
+    return recommendations;
+  }
+
+  private extractSavingsBreakdown(section: string): string[] {
+    return section
+      .split('\n')
+      .filter(line => line.includes(':'))
+      .map(line => line.trim());
+  }
+
+  private extractSmartShoppingTips(section: string): string[] {
+    return section
+      .split('\n')
+      .filter(line => line.match(/^\d+\./))
+      .map(line => line.replace(/^\d+\.\s*/, '').trim());
+  }
+
+  private extractDetailedTrends(section: string): {
+    categories: string[];
+    venues: string[];
+    locations: string[];
+  } {
+    const trends = {
+      categories: [],
+      venues: [],
+      locations: [],
+    };
+
+    const lines = section.split('\n');
+    let currentCategory: keyof typeof trends | null = null;
+
+    lines.forEach(line => {
+      if (line.includes('Most Popular Categories:')) currentCategory = 'categories';
+      else if (line.includes('Popular Venues:')) currentCategory = 'venues';
+      else if (line.includes('Popular Areas:')) currentCategory = 'locations';
+      else if (currentCategory && line.startsWith('-')) {
+        trends[currentCategory].push(line.substring(1).trim());
+      }
+    });
+
+    return trends;
   }
 
   private calculateAverageDiscount(deals: Deal[]): number {
@@ -165,77 +251,6 @@ export class GeminiService {
     if (deal.metadata?.verified) score += 20;
     if (deal.metadata?.popularity) score += deal.metadata.popularity * 0.5;
     return score;
-  }
-
-  private extractRecommendations(section: string, originalDeals: Deal[]): Deal[] {
-    const recommendations: Deal[] = [];
-    const lines = section.split('\n');
-    let currentDeal: Partial<Deal> = {};
-
-    lines.forEach(line => {
-      if (line.startsWith('-')) {
-        const text = line.substring(1).trim();
-        if (text.includes('Venue:')) {
-          currentDeal.venue = { name: text.split('Venue:')[1].trim(), type: '' };
-        } else if (text.includes('Discount:')) {
-          currentDeal.dealDetails = {
-            discountedPrice: text.split('Discount:')[1].trim(),
-          };
-        } else if (text.includes('Location:')) {
-          currentDeal.location = {
-            address: text.split('Location:')[1].trim(),
-            country: originalDeals[0]?.location?.country || '',
-          };
-        }
-      } else if (Object.keys(currentDeal).length > 0) {
-        // Find matching original deal
-        const matchingDeal = originalDeals.find(
-          d => d.venue?.name === currentDeal.venue?.name
-        );
-        if (matchingDeal) {
-          recommendations.push({
-            ...matchingDeal,
-            ...currentDeal as Deal,
-          });
-        }
-        currentDeal = {};
-      }
-    });
-
-    return recommendations;
-  }
-
-  private extractSavingsTips(section: string): string[] {
-    return section
-      .split('\n')
-      .filter(line => line.startsWith('-'))
-      .map(line => line.substring(1).trim());
-  }
-
-  private extractTrends(section: string): {
-    categories: string[];
-    venues: string[];
-    locations: string[];
-  } {
-    const trends = {
-      categories: [],
-      venues: [],
-      locations: [],
-    };
-
-    const lines = section.split('\n');
-    let currentCategory: keyof typeof trends | null = null;
-
-    lines.forEach(line => {
-      if (line.includes('Popular Categories:')) currentCategory = 'categories';
-      else if (line.includes('Popular Venues:')) currentCategory = 'venues';
-      else if (line.includes('Popular Locations:')) currentCategory = 'locations';
-      else if (currentCategory && line.startsWith('-')) {
-        trends[currentCategory].push(line.substring(1).trim());
-      }
-    });
-
-    return trends;
   }
 
   private getTopDeals(deals: Deal[], count: number): Deal[] {
