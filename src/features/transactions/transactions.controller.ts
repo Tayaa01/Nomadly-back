@@ -6,7 +6,7 @@ import { TransactionsService } from './transactions.service';
 @ApiTags('Transactions')
 @Controller('transactions')
 @UseGuards(JwtAuthGuard)
-@ApiBearerAuth()
+@ApiBearerAuth('access-token') // Use the same security name as defined in main.ts
 export class TransactionsController {
   constructor(private readonly transactionsService: TransactionsService) {}
 
@@ -22,5 +22,12 @@ export class TransactionsController {
   @ApiResponse({ status: 200, description: 'Returns user transaction totals' })
   async getUserTotals(@Request() req) {
     return this.transactionsService.getUserTotals(req.user.id);
+  }
+
+  @Get('by-day')
+  @ApiOperation({ summary: 'Get transactions grouped by day' })
+  @ApiResponse({ status: 200, description: 'Returns daily transaction totals for charting' })
+  async getTransactionsByDay(@Request() req) {
+    return this.transactionsService.getTransactionsByDay(req.user.id);
   }
 }

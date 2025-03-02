@@ -29,4 +29,11 @@ export class SavingsController {
     await this.savingsService.resetSavings(req.user.id);
     return { message: 'Savings have been reset successfully' };
   }
+
+  @Get('by-day')
+  @ApiOperation({ summary: 'Get savings grouped by day' })
+  @ApiResponse({ status: 200, description: 'Returns daily savings totals for charting' })
+  async getSavingsByDay(@Request() req) {
+    return this.savingsService.getSavingsByDay(req.user.id);
+  }
 }
