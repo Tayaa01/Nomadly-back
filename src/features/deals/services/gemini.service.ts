@@ -1,6 +1,6 @@
 import { Injectable, HttpException, HttpStatus, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { ConfigService } from '@nestjs/config';
 import { Deal, DealAnalysis } from '../interfaces/deal.interface';
 
 @Injectable()
@@ -9,282 +9,217 @@ export class GeminiService {
   private readonly genAI: GoogleGenerativeAI;
   private readonly model: any;
 
-  constructor(private configService: ConfigService) {
+  constructor(private readonly configService: ConfigService) {
     const apiKey = this.configService.get<string>('GEMINI_API_KEY');
     if (!apiKey) {
       throw new Error('GEMINI_API_KEY is not defined in environment variables');
     }
     this.genAI = new GoogleGenerativeAI(apiKey);
-    this.model = this.genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    this.model = this.genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
   }
 
-  async analyzeDeals(searchResults: any, category: string): Promise<DealAnalysis> {
+  async analyzeDeals(data: { deals: Deal[] } & Record<string, any>, category: string): Promise<DealAnalysis> {
     try {
       this.logger.debug('Analyzing deals with Gemini');
-      const prompt = this.buildAnalysisPrompt(searchResults, category);
+      const prompt = this.buildAnalysisPrompt(data.deals, category);
       
       const result = await this.model.generateContent({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        contents: [{
+          parts: [{ text: prompt }]
+        }]
       });
       
       const response = await result.response;
       const text = response.text();
+      
       this.logger.debug('Received response from Gemini');
-
-      return this.parseGeminiResponse(text, searchResults);
+      return this.parseGeminiResponse(text, data.deals);
     } catch (error) {
       this.logger.error('Gemini analysis error:', error);
-      return this.generateFallbackAnalysis(searchResults);
+      return this.generateFallbackAnalysis(data.deals);
     }
   }
 
-  private buildAnalysisPrompt(searchResults: any, category: string): string {
-    const deals = searchResults.organic.map((deal: Deal) => ({
+  private buildAnalysisPrompt(deals: Deal[], category: string): string {
+    const dealsJson = deals.map(deal => ({
       title: deal.title,
       description: deal.description,
-      venue: deal.venue,
-      location: deal.location,
-      dealDetails: deal.dealDetails,
+      price: deal.price,
+      retailer: deal.retailer.name,
+      location: deal.location?.city,
     }));
 
     return `
-      As a deals and discounts expert, analyze these ${category} deals and provide a detailed, user-friendly report.
-      Focus on practical, actionable information that shoppers can use immediately.
+      You are a deals and savings expert. Analyze these ${category} deals and create a structured response.
       
-      Deals Data:
-      ${JSON.stringify(deals, null, 2)}
+      Deals to analyze:
+      ${JSON.stringify(dealsJson, null, 2)}
 
-      Please provide a structured analysis in this exact format:
+      Provide a response in this exact format:
+      RECOMMENDATIONS:
+      1. [Deal title] from [Retailer]
+      - Price: [Price details]
+      - Why: [Reason for recommendation]
 
-      TOP RECOMMENDATIONS:
-      For each of the best 5 deals:
-      - Store/Venue: [Name]
-      - Location: [Full address with coordinates if available]
-      - Deal Type: [Promo code/Sale/Bundle/etc.]
-      - Discount Details: [Specific discount amount/percentage]
-      - Promo Code: [If applicable]
-      - Valid Until: [End date if available]
-      - Why It's Great: [2-3 specific reasons]
-      - Pro Tips: [How to best use this deal]
+      2. [Next best deal]
+      ...
 
-      SAVINGS BREAKDOWN:
-      - Average Discount: [%]
-      - Best Value Deal: [Name + Why]
-      - Price Range Analysis: [Min-Max prices found]
-      - Special Conditions: [Any requirements or restrictions]
+      SAVINGS TIPS:
+      * [Specific tip for ${category}]
+      * [General saving tip]
+      * [Another relevant tip]
 
-      LOCATION INSIGHTS:
-      - Popular Areas: [List with deal counts]
-      - Transportation Tips: [How to get to major deal locations]
-      - Area-Specific Deals: [Any location-based promotions]
+      REASONS:
+      * [Reason why these deals are good]
+      * [Market insight]
+      * [Timing or availability insight]
 
-      SMART SHOPPING GUIDE:
-      1. Best Times to Shop: [Specific days/hours]
-      2. Loyalty Programs: [Available programs and benefits]
-      3. Stacking Strategies: [How to combine deals]
-      4. Hidden Savings: [Lesser-known ways to save]
-      5. Red Flags: [What to watch out for]
-
-      TRENDING PATTERNS:
-      - Most Popular Categories: [List with percentages]
-      - Emerging Deals: [New trends]
-      - Seasonal Opportunities: [Upcoming sales/events]
-
-      Format the response to be easily readable and actionable.
-      Include specific numbers, dates, and instructions whenever possible.
-      Focus on verified deals and include any available promo codes.
+      Keep recommendations factual and based on the actual deals provided.
+      Focus on real savings and value for money.
+      Provide specific tips for ${category} shopping.
     `;
   }
 
-  private parseGeminiResponse(response: string, originalResults: any): DealAnalysis {
+  private parseGeminiResponse(response: string, originalDeals: Deal[]): DealAnalysis {
     try {
       const sections = response.split('\n\n');
-      const deals = originalResults.organic || [];
-      
-      const analysis: DealAnalysis = {
-        recommendations: [],
-        discounts: [],
-        reasons: [],
-        savingsTips: [],
-        trending: {
-          categories: [],
-          venues: [],
-          locations: [],
-        },
-        statistics: {
-          averageDiscount: this.calculateAverageDiscount(deals),
-          totalDeals: deals.length,
-          bestValue: {
-            deal: this.findBestValueDeal(deals),
-            reason: 'Highest combined discount and rating score',
-          },
-        },
-      };
+      const recommendations: Deal[] = [];
+      const discounts: string[] = [];
+      const reasons: string[] = [];
+      const savingsTips: string[] = [];
 
-      // Parse each section
-      sections.forEach(section => {
-        if (section.includes('TOP RECOMMENDATIONS')) {
-          analysis.recommendations = this.extractDetailedRecommendations(section, deals);
-        } else if (section.includes('SAVINGS BREAKDOWN')) {
-          analysis.discounts = this.extractSavingsBreakdown(section);
-        } else if (section.includes('SMART SHOPPING GUIDE')) {
-          analysis.savingsTips = this.extractSmartShoppingTips(section);
-        } else if (section.includes('TRENDING PATTERNS')) {
-          analysis.trending = this.extractDetailedTrends(section);
+      let currentSection = '';
+      for (const section of sections) {
+        if (section.trim().startsWith('RECOMMENDATIONS:')) {
+          currentSection = 'recommendations';
+          continue;
+        } else if (section.trim().startsWith('SAVINGS TIPS:')) {
+          currentSection = 'tips';
+          continue;
+        } else if (section.trim().startsWith('REASONS:')) {
+          currentSection = 'reasons';
+          continue;
         }
-      });
 
-      // Ensure we have recommendations
-      if (analysis.recommendations.length === 0) {
-        analysis.recommendations = this.getTopDeals(deals, 5);
+        switch (currentSection) {
+          case 'recommendations':
+            const dealMatch = section.match(/\d+\.\s+(.*?)\s+from\s+(.*?)\n/);
+            if (dealMatch) {
+              const title = dealMatch[1];
+              const retailer = dealMatch[2];
+              const originalDeal = originalDeals.find(d => 
+                d.title.includes(title) || d.retailer.name.includes(retailer)
+              );
+              if (originalDeal) {
+                recommendations.push(originalDeal);
+                if (originalDeal.price?.discountPercentage) {
+                  discounts.push(`${originalDeal.price.discountPercentage}% off at ${retailer}`);
+                }
+              }
+            }
+            break;
+          case 'tips':
+            if (section.trim().startsWith('*')) {
+              savingsTips.push(section.trim().replace('* ', ''));
+            }
+            break;
+          case 'reasons':
+            if (section.trim().startsWith('*')) {
+              reasons.push(section.trim().replace('* ', ''));
+            }
+            break;
+        }
       }
 
-      return analysis;
+      // Get category and country from first recommendation if available
+      const firstDeal = originalDeals[0] || {
+        category: 'general',
+        location: { country: 'unknown' }
+      } as Deal;
+      const category = firstDeal.category || 'general';
+      const country = firstDeal.location?.country || 'unknown';
+
+      return {
+        recommendations: recommendations.length > 0 ? recommendations : originalDeals.slice(0, 3),
+        discounts: discounts.length > 0 ? discounts : this.extractDiscounts(originalDeals),
+        reasons: reasons.length > 0 ? reasons : this.generateDefaultReasons(originalDeals),
+        savingsTips: savingsTips.length > 0 ? savingsTips : this.generateDefaultTips(),
+        metadata: {
+          timestamp: new Date().toISOString(),
+          category,
+          country,
+          resultsCount: originalDeals.length,
+          averageDiscount: this.calculateAverageDiscount(originalDeals),
+          nearbyStores: this.countNearbyStores(originalDeals),
+        },
+      };
     } catch (error) {
       this.logger.error('Error parsing Gemini response:', error);
-      return this.generateFallbackAnalysis(originalResults);
+      return this.generateFallbackAnalysis(originalDeals);
     }
   }
 
-  private extractDetailedRecommendations(section: string, originalDeals: Deal[]): Deal[] {
-    const recommendations: Deal[] = [];
-    const dealBlocks = section.split(/\d+\./g).filter(block => block.trim());
+  private generateFallbackAnalysis(deals: Deal[]): DealAnalysis {
+    // Get category and country from first deal if available
+    const firstDeal = deals[0] || {
+      category: 'general',
+      location: { country: 'unknown' }
+    } as Deal;
+    const category = firstDeal.category || 'general';
+    const country = firstDeal.location?.country || 'unknown';
 
-    dealBlocks.forEach(block => {
-      const lines = block.split('\n').map(line => line.trim());
-      const dealInfo: any = {};
-
-      lines.forEach(line => {
-        if (line.startsWith('Store/Venue:')) dealInfo.venueName = line.split(':')[1].trim();
-        if (line.startsWith('Location:')) dealInfo.location = line.split(':')[1].trim();
-        if (line.startsWith('Deal Type:')) dealInfo.dealType = line.split(':')[1].trim();
-        if (line.startsWith('Discount Details:')) dealInfo.discount = line.split(':')[1].trim();
-        if (line.startsWith('Promo Code:')) dealInfo.promoCode = line.split(':')[1].trim();
-        if (line.startsWith('Valid Until:')) dealInfo.endDate = line.split(':')[1].trim();
-      });
-
-      // Find matching original deal
-      const matchingDeal = originalDeals.find(d => 
-        d.venue?.name?.toLowerCase().includes(dealInfo.venueName?.toLowerCase()) ||
-        dealInfo.venueName?.toLowerCase().includes(d.venue?.name?.toLowerCase())
-      );
-
-      if (matchingDeal) {
-        const enrichedDeal = {
-          ...matchingDeal,
-          dealDetails: {
-            ...matchingDeal.dealDetails,
-            promoCode: dealInfo.promoCode,
-            dealType: dealInfo.dealType,
-            endDate: dealInfo.endDate || matchingDeal.dealDetails.endDate,
-          },
-        };
-        recommendations.push(enrichedDeal);
-      }
-    });
-
-    return recommendations;
-  }
-
-  private extractSavingsBreakdown(section: string): string[] {
-    return section
-      .split('\n')
-      .filter(line => line.includes(':'))
-      .map(line => line.trim());
-  }
-
-  private extractSmartShoppingTips(section: string): string[] {
-    return section
-      .split('\n')
-      .filter(line => line.match(/^\d+\./))
-      .map(line => line.replace(/^\d+\.\s*/, '').trim());
-  }
-
-  private extractDetailedTrends(section: string): {
-    categories: string[];
-    venues: string[];
-    locations: string[];
-  } {
-    const trends = {
-      categories: [],
-      venues: [],
-      locations: [],
+    return {
+      recommendations: deals.slice(0, 3),
+      discounts: this.extractDiscounts(deals),
+      reasons: this.generateDefaultReasons(deals),
+      savingsTips: this.generateDefaultTips(),
+      metadata: {
+        timestamp: new Date().toISOString(),
+        category,
+        country,
+        resultsCount: deals.length,
+        averageDiscount: this.calculateAverageDiscount(deals),
+        nearbyStores: this.countNearbyStores(deals),
+      },
     };
+  }
 
-    const lines = section.split('\n');
-    let currentCategory: keyof typeof trends | null = null;
-
-    lines.forEach(line => {
-      if (line.includes('Most Popular Categories:')) currentCategory = 'categories';
-      else if (line.includes('Popular Venues:')) currentCategory = 'venues';
-      else if (line.includes('Popular Areas:')) currentCategory = 'locations';
-      else if (currentCategory && line.startsWith('-')) {
-        trends[currentCategory].push(line.substring(1).trim());
-      }
-    });
-
-    return trends;
+  private extractDiscounts(deals: Deal[]): string[] {
+    return deals
+      .filter(deal => deal.price?.discountPercentage)
+      .map(deal => `${deal.price!.discountPercentage}% off at ${deal.retailer.name}`)
+      .slice(0, 5);
   }
 
   private calculateAverageDiscount(deals: Deal[]): number {
     const discounts = deals
-      .map(deal => deal.dealDetails?.discountPercentage)
-      .filter(discount => discount !== undefined) as number[];
+      .map(deal => deal.price?.discountPercentage || 0)
+      .filter(discount => discount > 0);
     
-    return discounts.length > 0
-      ? Math.round(discounts.reduce((a, b) => a + b, 0) / discounts.length)
-      : 0;
+    if (discounts.length === 0) return 0;
+    return Math.round(discounts.reduce((a, b) => a + b, 0) / discounts.length);
   }
 
-  private findBestValueDeal(deals: Deal[]): Deal {
-    return deals.reduce((best, current) => {
-      const currentScore = this.calculateDealScore(current);
-      const bestScore = this.calculateDealScore(best);
-      return currentScore > bestScore ? current : best;
-    }, deals[0]);
+  private generateDefaultReasons(deals: Deal[]): string[] {
+    const avgDiscount = this.calculateAverageDiscount(deals);
+    return [
+      `Average savings of ${avgDiscount}% across available deals`,
+      'Multiple trusted retailers offering competitive prices',
+      'Limited time offers available now',
+    ];
   }
 
-  private calculateDealScore(deal: Deal): number {
-    let score = 0;
-    if (deal.dealDetails?.discountPercentage) score += deal.dealDetails.discountPercentage;
-    if (deal.venue?.rating) score += deal.venue.rating * 10;
-    if (deal.metadata?.verified) score += 20;
-    if (deal.metadata?.popularity) score += deal.metadata.popularity * 0.5;
-    return score;
+  private generateDefaultTips(): string[] {
+    return [
+      'Compare prices across different retailers',
+      'Check for additional cashback or reward points',
+      'Sign up for retailer newsletters for exclusive discounts',
+      'Consider bulk purchases for better value',
+      'Look for seasonal sales and special events',
+    ];
   }
 
-  private getTopDeals(deals: Deal[], count: number): Deal[] {
-    return deals
-      .sort((a, b) => this.calculateDealScore(b) - this.calculateDealScore(a))
-      .slice(0, count);
-  }
-
-  private generateFallbackAnalysis(results: any): DealAnalysis {
-    const deals = results.organic || [];
-    return {
-      recommendations: this.getTopDeals(deals, 5),
-      discounts: [],
-      reasons: ['Based on available deal data'],
-      savingsTips: [
-        'Compare prices across different platforms',
-        'Sign up for newsletters to receive exclusive discounts',
-        'Check for seasonal sales and special events',
-        'Look for combo deals or package offers',
-        'Consider loyalty programs for additional savings',
-      ],
-      trending: {
-        categories: [],
-        venues: [],
-        locations: [],
-      },
-      statistics: {
-        averageDiscount: this.calculateAverageDiscount(deals),
-        totalDeals: deals.length,
-        bestValue: {
-          deal: this.findBestValueDeal(deals),
-          reason: 'Highest combined discount and rating score',
-        },
-      },
-    };
+  private countNearbyStores(deals: Deal[]): number {
+    return deals.filter(deal => deal.location?.coordinates).length;
   }
 } 

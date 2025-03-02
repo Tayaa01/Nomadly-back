@@ -122,33 +122,28 @@ export class SerperService {
         title: result.title,
         description: result.snippet,
         url: result.link,
-        location: {
-          country: country,
-          city: city,
-        },
-        venue: {
-          name: this.extractVenueName(result.title, result.snippet),
-          type: category,
-          rating: this.extractRating(result.snippet),
-          priceRange: this.extractPriceRange(result.snippet),
-        },
-        dealDetails: {
-          originalPrice: this.extractPrice(result.snippet, 'original'),
-          discountedPrice: this.extractPrice(result.snippet, 'discounted'),
+        price: {
+          current: parseFloat(this.extractPrice(result.snippet, 'discounted')) || 0,
+          currency: 'USD',
           discountPercentage: this.calculateDiscountPercentage(
             this.extractPrice(result.snippet, 'original'),
             this.extractPrice(result.snippet, 'discounted'),
           ),
-          promoCode: promoCode,
-          dealType: dealType,
-          terms: this.extractTerms(result.snippet),
         },
-        metadata: {
-          lastUpdated: new Date().toISOString(),
-          source: new URL(result.link).hostname,
-          verified: this.isVerifiedSource(result.link),
-          popularity: this.calculatePopularityScore(result),
+        retailer: {
+          name: result.title.split(' - ')[1] || 'Unknown Retailer',
+          rating: this.extractRating(result.snippet),
         },
+        category: category,
+        location: {
+          name: result.title.split(' - ')[1] || 'Unknown Store',
+          address: result.address || '',
+          city: result.city || '',
+          country: country,
+          coordinates: undefined,
+        },
+        lastVerified: new Date(),
+        source: 'Serper',
       };
       return deal;
     }));

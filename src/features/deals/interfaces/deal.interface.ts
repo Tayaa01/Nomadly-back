@@ -1,52 +1,61 @@
 export interface Deal {
+    id?: string;
     title: string;
     description: string;
     url: string;
-    price?: string;
-    discount?: string;
-    rating?: number;
-    location: {
-      address?: string;
-      city?: string;
-      country: string;
-      coordinates?: {
-        latitude?: number;
-        longitude?: number;
-      };
-    };
-    venue: {
-      name: string;
-      type: string;
-      rating?: number;
-      priceRange?: string;
-      contact?: {
-        phone?: string;
-        website?: string;
-        socialMedia?: {
-          facebook?: string;
-          instagram?: string;
-          twitter?: string;
-        };
-      };
-    };
-    dealDetails: {
-      startDate?: string;
-      endDate?: string;
-      terms?: string[];
-      originalPrice?: string;
-      discountedPrice?: string;
+    price?: {
+      current: number;
+      original?: number;
+      currency: string;
       discountPercentage?: number;
-      availability?: string;
-      redemptionInstructions?: string;
-      promoCode?: string;
-      dealType?: 'promo_code' | 'bundle' | 'sale' | 'flash_deal' | 'seasonal' | 'standard';
     };
-    metadata: {
-      lastUpdated: string;
-      source: string;
-      verified: boolean;
-      popularity?: number;
+    promoCode?: {
+      code: string;
+      description: string;
+      expiryDate?: Date;
+      terms?: string[];
     };
+    location?: {
+      name: string;
+      address: string;
+      city: string;
+      country: string;
+      coordinates: {
+        latitude: number;
+        longitude: number;
+      };
+      openingHours?: {
+        [key: string]: string;
+      };
+    };
+    retailer: {
+      name: string;
+      logo?: string;
+      website?: string;
+      rating?: number;
+      reviewCount?: number;
+    };
+    category: string;
+    subcategory?: string;
+    validUntil?: Date;
+    lastVerified: Date;
+    source: string;
+    imageUrl?: string;
+    metadata?: {
+      [key: string]: any;
+    };
+  }
+  
+  export interface DealSearchParams {
+    country: string;
+    category: string;
+    specific?: string;
+    radius?: number;
+    latitude?: number;
+    longitude?: number;
+    minDiscount?: number;
+    maxPrice?: number;
+    sortBy?: 'discount' | 'price' | 'distance' | 'rating';
   }
   
   export interface DealAnalysis {
@@ -54,18 +63,13 @@ export interface Deal {
     discounts: string[];
     reasons: string[];
     savingsTips: string[];
-    trending: {
-      categories: string[];
-      venues: string[];
-      locations: string[];
-    };
-    statistics: {
-      averageDiscount: number;
-      totalDeals: number;
-      bestValue: {
-        deal: Deal;
-        reason: string;
-      };
+    metadata?: {
+      timestamp: string;
+      country: string;
+      category: string;
+      resultsCount: number;
+      averageDiscount?: number;
+      nearbyStores?: number;
     };
   }
   

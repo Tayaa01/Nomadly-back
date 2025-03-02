@@ -1,6 +1,8 @@
 import { Controller, Get, Query, Logger } from '@nestjs/common';
 import { SerperService } from '../services/serper.service';
 import { GeminiService } from '../services/gemini.service';
+import { DealsAggregatorService } from '../services/deals-aggregator.service';
+import { DealSearchParams } from '../interfaces/deal.interface';
 
 @Controller('deals')
 export class DealsController {
@@ -9,6 +11,7 @@ export class DealsController {
   constructor(
     private readonly serperService: SerperService,
     private readonly geminiService: GeminiService,
+    private readonly dealsAggregator: DealsAggregatorService,
   ) {}
 
   @Get('search')
@@ -16,28 +19,60 @@ export class DealsController {
     @Query('country') country: string,
     @Query('category') category: string,
     @Query('specific') specific?: string,
+    @Query('radius') radius?: number,
+    @Query('latitude') latitude?: number,
+    @Query('longitude') longitude?: number,
+    @Query('minDiscount') minDiscount?: number,
+    @Query('maxPrice') maxPrice?: number,
+    @Query('sortBy') sortBy?: 'discount' | 'price' | 'distance' | 'rating',
   ) {
     try {
       this.logger.debug(`Searching deals for ${category} in ${country}`);
       
-      // Get search results
-      const searchResults = await this.serperService.searchForDeals(
+      // Search for deals using multiple sources
+      const searchParams: DealSearchParams = {
+        country,
+        category,
+        specific,
+        radius,
+        latitude,
+        longitude,
+        minDiscount,
+        maxPrice,
+        sortBy,
+      };
+
+      const deals = await this.dealsAggregator.searchDeals(searchParams);
+      this.logger.debug(`Found ${deals.length} deals from multiple sources`);
+
+      // Get additional deals from Serper as backup
+      const serperResults = await this.serperService.searchForDeals(
         country,
         category,
         specific,
       );
 
-      this.logger.debug(`Found ${searchResults.organic?.length || 0} results`);
+      // Combine all deals
+      const allDeals = [...deals, ...serperResults.organic];
 
-      // Analyze results
+      // Analyze results with Gemini
       const analyzedResults = await this.geminiService.analyzeDeals(
-        searchResults,
+        { deals: allDeals, ...searchParams },
         category,
       );
 
       return {
         success: true,
-        data: analyzedResults,
+        data: {
+          ...analyzedResults,
+          metadata: {
+            timestamp: new Date().toISOString(),
+            country,
+            category,
+            resultsCount: allDeals.length,
+            sources: ['RetailMeNot', 'Groupon', 'Coupons API', 'Serper'],
+          },
+        },
       };
     } catch (error) {
       this.logger.error('Error in searchDeals:', error);
