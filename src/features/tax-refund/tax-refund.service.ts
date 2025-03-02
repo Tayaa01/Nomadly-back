@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { TaxRefundRules, TaxRefundAnalysis } from './types';
-import { countries } from 'countries-list';
+import { countries, Country } from 'countries-list';
 
 @Injectable()
 export class TaxRefundService {
@@ -326,7 +326,7 @@ export class TaxRefundService {
     if (!rules) {
       return {
         eligible: false,
-        message: `Sorry, we don't have tax refund information for ${countryName}. Please check with local authorities or your hotel concierge for current tax-free shopping rules.`,
+        message: `We don't have tax refund information for ${countryName} at the moment. Please check with local authorities for tax-free shopping options.`,
       };
     }
 
@@ -334,10 +334,8 @@ export class TaxRefundService {
     if (country.toUpperCase() === 'US') {
       return {
         eligible: false,
-        country: 'US',
-        message: rules.message,
-        locations: rules.locations,
-        documentation: rules.documentation
+        country: countryName,
+        message: rules.message
       };
     }
 

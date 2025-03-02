@@ -1,0 +1,58 @@
+import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import { Document } from 'mongoose';
+
+@Schema({ 
+  timestamps: true,
+  toJSON: {
+    transform: (_, ret) => {
+      delete ret.password;
+      delete ret.__v;
+      delete ret.passwordResetToken;
+      delete ret.passwordResetExpires;
+      return ret;
+    },
+  },
+})
+export class User {
+  @Prop({ required: true })
+  firstName: string;
+
+  @Prop({ required: true })
+  lastName: string;
+
+  @Prop({ required: true, unique: true })
+  email: string;
+
+  @Prop({ required: true, select: false })
+  password: string;
+
+  @Prop({ default: 'user' })
+  role: string;
+
+  @Prop({ required: true, minlength: 2, maxlength: 3 })
+  countryCode: string;
+
+  @Prop({ default: true })
+  isActive: boolean;
+
+  @Prop({ select: false })
+  passwordResetToken?: string;
+
+  @Prop({ select: false })
+  passwordResetExpires?: Date;
+
+  @Prop({ default: 0 })
+  loginAttempts: number;
+
+  @Prop()
+  lockUntil?: Date;
+
+  @Prop({ default: false })
+  isEmailVerified: boolean;
+
+  @Prop()
+  lastLogin?: Date;
+}
+
+export type UserDocument = User & Document;
+export const UserSchema = SchemaFactory.createForClass(User);
