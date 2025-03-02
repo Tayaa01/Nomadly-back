@@ -46,16 +46,13 @@ async function bootstrap() {
 
   // Updated CORS Configuration
   app.enableCors({
-    origin: '*', // For development only - update this in production
+    origin: true, // Allow all origins in development
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With'],
-    exposedHeaders: ['Content-Range', 'X-Content-Range'],
     credentials: true,
-    preflightContinue: false,
-    optionsSuccessStatus: 204,
   });
 
-  // Swagger Documentation
+  // Update Swagger Documentation with security scheme
   const config = new DocumentBuilder()
     .setTitle('Nomadly API')
     .setDescription('Digital nomad tools and services API')
@@ -65,11 +62,11 @@ async function bootstrap() {
         type: 'http',
         scheme: 'bearer',
         bearerFormat: 'JWT',
-        name: 'JWT',
-        description: 'Enter JWT token',
+        name: 'Authorization',
+        description: 'Enter your JWT token',
         in: 'header',
       },
-      'JWT-auth', // This name here is important for references in controllers
+      'access-token', // This name here is important for reference
     )
     .addTag('Auth', 'Authentication endpoints')
     .addTag('Users', 'User management')
@@ -84,6 +81,7 @@ async function bootstrap() {
   SwaggerModule.setup('api', app, document, {
     swaggerOptions: {
       persistAuthorization: true,
+      security: [{ "access-token": [] }],
       tagsSorter: 'alpha',
       operationsSorter: 'alpha',
       docExpansion: 'none',
@@ -99,7 +97,7 @@ async function bootstrap() {
 
   // Start server
   const port = process.env.PORT || 3000;
-  await app.listen(port);
+  await app.listen(port, '0.0.0.0');
   console.log(`Application is running on: ${await app.getUrl()}`);
 }
 

@@ -11,6 +11,8 @@ import { TranslationModule } from './features/translation/translation.module';
 import { DealsModule } from './features/deals/deals.module';
 import { AuthModule } from './features/auth/auth.module';
 import { UsersModule } from './users/users.module';  // Updated import path
+import { TransactionsModule } from './features/transactions/transactions.module';
+import { SavingsModule } from './features/savings/savings.module';
 
 @Module({
   imports: [
@@ -33,6 +35,8 @@ import { UsersModule } from './users/users.module';  // Updated import path
     DealsModule,
     AuthModule,
     UsersModule,
+    TransactionsModule,
+    SavingsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

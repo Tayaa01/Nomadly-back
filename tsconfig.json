@@ -20,8 +20,17 @@
     "esModuleInterop": true,
     "moduleResolution": "node",
     "typeRoots": [
-      "./node_modules/@types",
-      "./src/types"
+      "node_modules/@types"
+    ],
+    "types": [
+      "node"
     ]
-  }
+  },
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
 }

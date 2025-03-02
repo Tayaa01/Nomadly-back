@@ -15,23 +15,47 @@ export class AuthService {
   async validateUser(email: string, password: string): Promise<any> {
     try {
       const user = await this.usersService.findByEmail(email);
-      if (user && (await bcrypt.compare(password, user.password))) {
-        const { password, ...result } = user.toObject();
-        return result;
+      if (!user) {
+        return null;
       }
-      return null;
+
+      const isPasswordValid = await bcrypt.compare(password, user.password);
+      if (!isPasswordValid) {
+        return null;
+      }
+
+      // Explicitly select the fields we need
+      const userObject = user.toObject();
+      console.log('User object:', userObject); // Debug log
+
+      return {
+        _id: userObject._id,
+        email: userObject.email,
+        firstName: userObject.firstName,
+        lastName: userObject.lastName,
+        countryCode: userObject.countryCode,
+        role: userObject.role
+      };
     } catch (error) {
+      console.error('Validate user error:', error);
       return null;
     }
   }
 
   async login(user: any): Promise<LoginResponse> {
-    const payload = { 
-      email: user.email, 
-      sub: user._id,
-      role: user.role 
+    if (!user || !user._id) {
+      throw new UnauthorizedException('Invalid user data');
+    }
+
+    const payload = {
+      email: user.email,
+      sub: user._id.toString(),
+      role: user.role || 'user',
+      countryCode: user.countryCode // Add country code to JWT payload
     };
-    
+
+    console.log('Login payload:', payload); // Debug log
+
     return {
       access_token: this.jwtService.sign(payload),
       user: {
@@ -40,7 +64,7 @@ export class AuthService {
         firstName: user.firstName,
         lastName: user.lastName,
         countryCode: user.countryCode,
-        role: user.role
+        role: user.role || 'user'
       }
     };
   }

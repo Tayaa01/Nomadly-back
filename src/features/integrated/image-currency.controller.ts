@@ -1,9 +1,11 @@
-import { Controller, Post, UploadedFile, UseInterceptors, Body } from '@nestjs/common';
+import { Controller, Post, UploadedFile, UseInterceptors, Body, UseGuards, Request } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiConsumes, ApiBody, ApiResponse } from '@nestjs/swagger';
 import { GeminiService } from '../gemini/gemini.service';
 import { CurrencyConverterService } from '../currency-converter/currency-converter.service';
 import { TaxRefundService } from '../tax-refund/tax-refund.service';
+import { TransactionsService } from '../transactions/transactions.service';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import * as Joi from 'joi';
 
 @ApiTags('Bill Analysis')
@@ -13,6 +15,7 @@ export class ImageCurrencyController {
     private readonly geminiService: GeminiService,
     private readonly currencyConverterService: CurrencyConverterService,
     private readonly taxRefundService: TaxRefundService,
+    private readonly transactionsService: TransactionsService,
   ) {}
 
   @Post('analyze-and-convert')
@@ -83,8 +86,9 @@ export class ImageCurrencyController {
   }
 
   @Post('analyze-with-tax')
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({ 
-    summary: 'Advanced bill analysis',
+    summary: 'Advanced bill analysis with transaction tracking',
     description: 'Analyze bill for amount, currency conversion and tourist tax refund eligibility'
   })
   @UseInterceptors(FileInterceptor('image'))
@@ -154,12 +158,13 @@ export class ImageCurrencyController {
     description: 'Invalid input or image format'
   })
   async analyzeWithTaxRefund(
+    @Request() req,
     @UploadedFile() file: Express.Multer.File,
-    @Body('targetCurrency') targetCurrency: string,
     @Body('country') country: string,
+    @Body('targetCurrency') targetCurrency?: string,  // Move optional parameter to the end
   ) {
     // First get currency analysis
-    const analysis = await this.geminiService.analyzeImage(file.buffer);
+    const analysis = await this.geminiService.analyzeImageWithDescription(file.buffer);
 
     // Get currency conversion if needed
     let conversion = null;
@@ -176,6 +181,21 @@ export class ImageCurrencyController {
       analysis.amount,
       country
     );
+
+    // Save transaction
+    await this.transactionsService.create({
+      userId: req.user.id,
+      originalAmount: analysis.amount,
+      originalCurrency: analysis.currency,
+      convertedAmount: conversion ? conversion.amount : analysis.amount,
+      convertedCurrency: conversion ? targetCurrency : analysis.currency,
+      description: analysis.description,
+      taxRefundAmount: taxRefund.eligible ? taxRefund.potentialRefund : 0,
+      taxRefundDescription: taxRefund.eligible ? `Tax refund from ${country}` : null,
+      country,
+      hasTaxRefund: taxRefund.eligible,
+      scanDate: new Date()
+    });
 
     return {
       analysis,
