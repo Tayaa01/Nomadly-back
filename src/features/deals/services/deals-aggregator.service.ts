@@ -65,7 +65,7 @@ export class DealsAggregatorService {
         return this.getDefaultDeals(params);
       }
 
-      return response.data.data.map(deal => this.mapDealResponse(deal));
+      return response.data.data.map(deal => this.mapDealResponse(deal, params));
     } catch (error) {
       this.logger.warn('API fetch error:', error?.message || error);
       return this.getDefaultDeals(params);
@@ -131,7 +131,7 @@ export class DealsAggregatorService {
     }
   }
 
-  private mapDealResponse(apiDeal: any): Deal {
+  private mapDealResponse(apiDeal: any, params: DealSearchParams): Deal {
     const price = apiDeal.offer?.price || apiDeal.price;
     const originalPrice = apiDeal.offer?.original_price || apiDeal.original_price;
     const discountPercentage = originalPrice && price ? 
