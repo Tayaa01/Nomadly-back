@@ -51,9 +51,10 @@ export class DealsController {
         category,
         specific,
       );
+      this.logger.debug(`Found ${serperResults.length} additional deals from Serper`);
 
       // Combine all deals
-      const allDeals = [...deals, ...serperResults.organic];
+      const allDeals = [...deals, ...serperResults];
 
       // Analyze results with Gemini
       const analyzedResults = await this.geminiService.analyzeDeals(
