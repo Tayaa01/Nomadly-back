@@ -3,30 +3,37 @@ import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
 import { Deal, DealSearchParams } from '../interfaces/deal.interface';
+import { SerperService } from './serper.service';
+import { GeminiService } from './gemini.service';
 
 @Injectable()
 export class DealsAggregatorService {
   private readonly logger = new Logger(DealsAggregatorService.name);
-  private readonly rapidApiKey: string;
-  private readonly rapidApiHost = 'real-time-product-search.p.rapidapi.com';
 
   constructor(
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
-  ) {
-    this.rapidApiKey = this.configService.get<string>('RAPID_API_KEY') || '';
-    if (!this.rapidApiKey) {
-      this.logger.warn('No RAPID_API_KEY provided, will use default deals');
-    }
-  }
+    private readonly serperService: SerperService,
+    private readonly geminiService: GeminiService,
+  ) {}
 
   async searchDeals(params: DealSearchParams): Promise<Deal[]> {
     try {
-      // Get deals from a reliable API source
-      const deals = await this.fetchDealsFromAPI(params);
+      // Get deals from Serper
+      const deals = await this.serperService.searchForDeals(
+        params.country,
+        params.category,
+        params.specific,
+      );
+      
+      // Analyze deals with Gemini
+      const analysis = await this.geminiService.analyzeDeals(
+        { deals },
+        params.category
+      );
       
       // Enrich deals with location data
-      const dealsWithLocation = await this.enrichDealsWithLocation(deals);
+      const dealsWithLocation = await this.enrichDealsWithLocation(analysis.recommendations);
       
       // Sort and return results
       return this.sortDeals(dealsWithLocation, params.sortBy);
@@ -36,39 +43,6 @@ export class DealsAggregatorService {
         'Failed to fetch deals',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
-    }
-  }
-
-  private async fetchDealsFromAPI(params: DealSearchParams): Promise<Deal[]> {
-    if (!this.rapidApiKey) {
-      this.logger.warn('No API key available, using default deals');
-      return this.getDefaultDeals(params);
-    }
-
-    try {
-      const response = await firstValueFrom(
-        this.httpService.get('https://real-time-product-search.p.rapidapi.com/search', {
-          params: {
-            q: `${params.category} ${params.specific || ''} deals`,
-            country: params.country,
-            limit: '50',
-          },
-          headers: {
-            'X-RapidAPI-Key': this.rapidApiKey,
-            'X-RapidAPI-Host': this.rapidApiHost,
-          },
-        })
-      );
-
-      if (!response.data?.data?.length) {
-        this.logger.warn('No deals found from API, using defaults');
-        return this.getDefaultDeals(params);
-      }
-
-      return response.data.data.map(deal => this.mapDealResponse(deal, params));
-    } catch (error) {
-      this.logger.warn('API fetch error:', error?.message || error);
-      return this.getDefaultDeals(params);
     }
   }
 
@@ -129,72 +103,6 @@ export class DealsAggregatorService {
       this.logger.warn('OpenStreetMap API error:', error);
       return null;
     }
-  }
-
-  private mapDealResponse(apiDeal: any, params: DealSearchParams): Deal {
-    const price = apiDeal.offer?.price || apiDeal.price;
-    const originalPrice = apiDeal.offer?.original_price || apiDeal.original_price;
-    const discountPercentage = originalPrice && price ? 
-      Math.round(((originalPrice - price) / originalPrice) * 100) : 0;
-
-    return {
-      title: apiDeal.title || '',
-      description: apiDeal.description || apiDeal.snippet || '',
-      url: apiDeal.url || apiDeal.link || '',
-      price: {
-        current: parseFloat(price) || 0,
-        currency: apiDeal.currency_code || 'USD',
-        discountPercentage,
-      },
-      retailer: {
-        name: apiDeal.merchant || apiDeal.seller || 'Unknown Retailer',
-        rating: apiDeal.rating || undefined,
-      },
-      category: apiDeal.category || params.category || 'General',
-      location: {
-        name: apiDeal.merchant || apiDeal.seller || 'Unknown Store',
-        address: apiDeal.location || '',
-        city: apiDeal.city || '',
-        country: apiDeal.country || params.country || '',
-        coordinates: undefined,
-      },
-      lastVerified: new Date(),
-      source: 'RapidAPI',
-    };
-  }
-
-  private getDefaultDeals(params: DealSearchParams): Deal[] {
-    // Return some sample deals when API is not available
-    return [
-      {
-        title: 'Sample Electronics Deal',
-        description: '20% off on latest electronics',
-        url: 'https://example.com/deal',
-        price: {
-          current: 799.99,
-          currency: 'USD',
-          discountPercentage: 20,
-        },
-        retailer: {
-          name: 'TechStore',
-          rating: 4.5,
-        },
-        category: params.category,
-        location: {
-          name: 'TechStore Main',
-          address: '123 Tech Street',
-          city: 'San Francisco',
-          country: params.country,
-          coordinates: {
-            latitude: 37.7749,
-            longitude: -122.4194,
-          },
-        },
-        lastVerified: new Date(),
-        source: 'Default',
-      },
-      // Add more default deals if needed
-    ];
   }
 
   private sortDeals(deals: Deal[], sortBy?: string): Deal[] {

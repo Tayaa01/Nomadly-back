@@ -9,7 +9,7 @@ import { DealsAggregatorService } from './services/deals-aggregator.service';
 @Module({
   imports: [
     HttpModule,
-    ConfigModule.forRoot(),
+    ConfigModule,
   ],
   controllers: [DealsController],
   providers: [
@@ -17,6 +17,10 @@ import { DealsAggregatorService } from './services/deals-aggregator.service';
     GeminiService,
     DealsAggregatorService,
   ],
-  exports: [SerperService, GeminiService, DealsAggregatorService],
+  exports: [
+    SerperService,
+    GeminiService,
+    DealsAggregatorService,
+  ],
 })
 export class DealsModule {} 
