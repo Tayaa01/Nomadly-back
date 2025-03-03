@@ -21,6 +21,12 @@ export class GeminiService {
   async analyzeDeals(data: { deals: Deal[] } & Record<string, any>, category: string): Promise<DealAnalysis> {
     try {
       this.logger.debug('Analyzing deals with Gemini');
+      
+      if (!Array.isArray(data.deals) || data.deals.length === 0) {
+        this.logger.warn('No deals to analyze');
+        return this.generateFallbackAnalysis([]);
+      }
+
       const prompt = this.buildAnalysisPrompt(data.deals, category);
       
       const result = await this.model.generateContent({
@@ -36,7 +42,7 @@ export class GeminiService {
       return this.parseGeminiResponse(text, data.deals);
     } catch (error) {
       this.logger.error('Gemini analysis error:', error);
-      return this.generateFallbackAnalysis(data.deals);
+      return this.generateFallbackAnalysis(data.deals || []);
     }
   }
 
