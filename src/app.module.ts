@@ -13,6 +13,7 @@ import { AuthModule } from './features/auth/auth.module';
 import { UsersModule } from './users/users.module';  // Updated import path
 import { TransactionsModule } from './features/transactions/transactions.module';
 import { SavingsModule } from './features/savings/savings.module';
+import { OpenaitryModule } from './features/openaitry/openaitry.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { SavingsModule } from './features/savings/savings.module';
     UsersModule,
     TransactionsModule,
     SavingsModule,
+    OpenaitryModule,
   ],
   controllers: [AppController],
   providers: [AppService],
