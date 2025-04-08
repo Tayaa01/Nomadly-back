@@ -2,14 +2,34 @@ import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Transaction, TransactionDocument } from './schemas/transaction.schema';
+import { CurrencyConverterService } from '../currency-converter/currency-converter.service';
 
 @Injectable()
 export class TransactionsService {
   constructor(
-    @InjectModel(Transaction.name) private readonly transactionModel: Model<TransactionDocument>
+    @InjectModel(Transaction.name) private readonly transactionModel: Model<TransactionDocument>,
+    private readonly currencyConverterService: CurrencyConverterService // Inject CurrencyConverterService
   ) {}
 
   async create(transactionData: Partial<Transaction>): Promise<Transaction> {
+    const transaction = new this.transactionModel(transactionData);
+    return transaction.save();
+  }
+
+  async createManualTransaction(userId: string, data: { amount: number; currency: string; date: string; description: string; convertedCurrency: string }): Promise<Transaction> {
+    // Convert the amount to the target currency
+    const conversion = await this.currencyConverterService.convertCurrency(data.currency, data.convertedCurrency, data.amount);
+
+    const transactionData: Partial<Transaction> = {
+      userId: new Types.ObjectId(userId),
+      originalAmount: data.amount,
+      originalCurrency: data.currency,
+      convertedAmount: conversion.result, // Use the converted amount
+      convertedCurrency: data.convertedCurrency, // Use the target currency
+      createdAt: new Date(data.date), // Convert string date to Date object
+      description: data.description,
+    };
+
     const transaction = new this.transactionModel(transactionData);
     return transaction.save();
   }
@@ -76,5 +96,52 @@ export class TransactionsService {
         _id: 0
       }}
     ]);
+  }
+
+  async getTransactionsWithDetails(userId: string): Promise<any[]> {
+    return this.transactionModel.aggregate([
+      // Match transactions for the user
+      { $match: { userId: new Types.ObjectId(userId) } },
+      // Lookup user details (assuming a User collection exists)
+      {
+        $lookup: {
+          from: 'users', // Name of the User collection
+          localField: 'userId',
+          foreignField: '_id',
+          as: 'userDetails',
+        },
+      },
+      // Unwind the userDetails array
+      { $unwind: { path: '$userDetails', preserveNullAndEmptyArrays: true } },
+      // Project the desired fields
+      {
+        $project: {
+          originalAmount: 1,
+          originalCurrency: 1,
+          convertedAmount: 1,
+          convertedCurrency: 1,
+          description: 1,
+          taxRefundAmount: 1,
+          taxRefundDescription: 1,
+          country: 1,
+          scanDate: 1,
+          hasTaxRefund: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          userDetails: {
+            firstName: 1,
+            lastName: 1,
+            email: 1,
+          },
+        },
+      },
+    ]);
+  }
+
+  async getUserTransactionsWithDetails(userId: string): Promise<any[]> {
+    return this.transactionModel.find({ userId: new Types.ObjectId(userId) })
+      .select('createdAt description originalCurrency originalAmount')
+      .sort({ createdAt: -1 })
+      .exec();
   }
 }

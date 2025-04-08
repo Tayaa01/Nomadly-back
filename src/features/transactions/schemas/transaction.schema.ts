@@ -1,11 +1,10 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document, Schema as MongooseSchema } from 'mongoose';
-import { User } from '../../../users/schemas/user.schema';
+import { Document, Types, Schema as MongooseSchema } from 'mongoose';
 
 @Schema({ timestamps: true })
 export class Transaction {
-  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User', required: true })
-  userId: User;
+  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
+  userId: Types.ObjectId; // Changed from User to Types.ObjectId
 
   @Prop({ required: true })
   originalAmount: number;
@@ -13,10 +12,10 @@ export class Transaction {
   @Prop({ required: true })
   originalCurrency: string;
 
-  @Prop({ required: true })
+  @Prop({ required: true, default: 0 }) // Default value for convertedAmount
   convertedAmount: number;
 
-  @Prop({ required: true })
+  @Prop({ required: true, default: 'USD' }) // Default value for convertedCurrency
   convertedCurrency: string;
 
   @Prop({ required: true })
@@ -36,7 +35,13 @@ export class Transaction {
 
   @Prop({ type: Boolean, default: false })
   hasTaxRefund: boolean;
+
+  @Prop()
+  createdAt?: Date; // Add createdAt as an optional property
+
+  @Prop()
+  updatedAt?: Date; // Add updatedAt as an optional property
 }
 
 export type TransactionDocument = Transaction & Document;
-export const TransactionSchema = SchemaFactory.createForClass(Transaction);
+export const TransactionSchema = SchemaFactory.createForClass(Transaction)

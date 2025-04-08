@@ -11,6 +11,6 @@ import { CurrencyConverterService } from './currency-converter.service';
   ],
   controllers: [CurrencyConverterController],
   providers: [CurrencyConverterService],
-  exports: [CurrencyConverterService]
+  exports: [CurrencyConverterService] // Export the service so it can be used in other modules
 })
 export class CurrencyConverterModule {}
