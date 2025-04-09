@@ -32,6 +32,9 @@ export class User {
   @Prop({ required: true, minlength: 2, maxlength: 3 })
   countryCode: string;
 
+  @Prop({ default: 'USD' }) // Add currency field with a default value
+  currency: string;
+
   @Prop({ default: true })
   isActive: boolean;
 

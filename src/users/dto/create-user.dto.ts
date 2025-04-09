@@ -57,4 +57,8 @@ export class CreateUserDto {
     message: 'Country code must be 2 or 3 uppercase letters (ISO 3166-1)',
   })
   countryCode: string;
+
+  @ApiProperty({ example: 'USD', description: 'Currency of the user (automatically set based on country code)' })
+  @IsString()
+  currency?: string; // Make this optional since it will be set automatically
 }

@@ -147,4 +147,12 @@ export class UsersController {
     
     return this.usersService.delete(id);
   }
+
+  @Get('currency')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Get the currency of the logged-in user' })
+  @ApiResponse({ status: HttpStatus.OK, description: 'Returns the user\'s currency' })
+  async getUserCurrency(@Request() req): Promise<{ currency: string }> {
+    return this.usersService.getUserCurrency(req.user.id);
+  }
 }

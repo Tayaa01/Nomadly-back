@@ -1,14 +1,16 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Transaction, TransactionDocument } from './schemas/transaction.schema';
 import { CurrencyConverterService } from '../currency-converter/currency-converter.service';
+import { UsersService } from '../../users/users.service'; // Import UsersService
 
 @Injectable()
 export class TransactionsService {
   constructor(
     @InjectModel(Transaction.name) private readonly transactionModel: Model<TransactionDocument>,
-    private readonly currencyConverterService: CurrencyConverterService // Inject CurrencyConverterService
+    private readonly currencyConverterService: CurrencyConverterService, // Inject CurrencyConverterService
+    private readonly usersService: UsersService // Inject UsersService
   ) {}
 
   async create(transactionData: Partial<Transaction>): Promise<Transaction> {
@@ -17,15 +19,18 @@ export class TransactionsService {
   }
 
   async createManualTransaction(userId: string, data: { amount: number; currency: string; date: string; description: string; convertedCurrency: string }): Promise<Transaction> {
-    // Convert the amount to the target currency
-    const conversion = await this.currencyConverterService.convertCurrency(data.currency, data.convertedCurrency, data.amount);
+    // Fetch the user's currency from the database
+    const userCurrency = await this.usersService.getUserCurrency(userId);
+
+    // Convert the amount to the user's currency
+    const conversion = await this.currencyConverterService.convertCurrency(data.currency, userCurrency.currency, data.amount);
 
     const transactionData: Partial<Transaction> = {
       userId: new Types.ObjectId(userId),
       originalAmount: data.amount,
       originalCurrency: data.currency,
       convertedAmount: conversion.result, // Use the converted amount
-      convertedCurrency: data.convertedCurrency, // Use the target currency
+      convertedCurrency: userCurrency.currency, // Use the user's currency
       createdAt: new Date(data.date), // Convert string date to Date object
       description: data.description,
     };
@@ -35,16 +40,25 @@ export class TransactionsService {
   }
 
   async getUserTransactions(userId: string): Promise<Transaction[]> {
-    // Convert string ID to ObjectId like in savings service
+    if (!Types.ObjectId.isValid(userId)) {
+      throw new BadRequestException('Invalid ID format'); // Added validation for userId
+    }
+
     return this.transactionModel.find({ userId: new Types.ObjectId(userId) })
       .sort({ createdAt: -1 })
       .exec();
   }
 
   async getUserTotals(userId: string) {
-    // Convert string ID to ObjectId like in savings service
+    if (!Types.ObjectId.isValid(userId)) {
+      throw new BadRequestException('Invalid ID format'); // Added validation for userId
+    }
+
     const transactions = await this.transactionModel.find({ userId: new Types.ObjectId(userId) }).exec();
-    
+    if (!transactions.length) {
+      throw new NotFoundException(`No transactions found for user with ID ${userId}`);
+    }
+
     // Calculate totals
     const totalOriginal = transactions.reduce((sum, t) => sum + t.originalAmount, 0);
     const totalConverted = transactions.reduce((sum, t) => sum + t.convertedAmount, 0);
@@ -66,7 +80,10 @@ export class TransactionsService {
   }
 
   async getTransactionsByDay(userId: string): Promise<any[]> {
-    // Use MongoDB aggregation to group transactions by day
+    if (!Types.ObjectId.isValid(userId)) {
+      throw new BadRequestException('Invalid ID format'); // Added validation for userId
+    }
+
     return this.transactionModel.aggregate([
       // Match transactions for this user
       { $match: { userId: new Types.ObjectId(userId) } },
@@ -140,7 +157,7 @@ export class TransactionsService {
 
   async getUserTransactionsWithDetails(userId: string): Promise<any[]> {
     return this.transactionModel.find({ userId: new Types.ObjectId(userId) })
-      .select('createdAt description originalCurrency originalAmount')
+      .select('createdAt description originalCurrency originalAmount convertedAmount convertedCurrency') // Include converted fields
       .sort({ createdAt: -1 })
       .exec();
   }

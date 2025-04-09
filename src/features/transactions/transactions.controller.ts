@@ -1,8 +1,8 @@
 import { Controller, Get, Post, Body, UseGuards, Request } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TransactionsService } from './transactions.service';
-import { CreateTransactionDto } from './dto/create-transaction.dto';
+import { CreateTransactionNoConvertedCurrencyDto } from './dto/create-transaction-no-converted-currency.dto';
 
 @ApiTags('Transactions')
 @Controller('transactions')
@@ -13,7 +13,24 @@ export class TransactionsController {
 
   @Get()
   @ApiOperation({ summary: 'Get user transactions with details' })
-  @ApiResponse({ status: 200, description: 'Returns user transactions with details' })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns user transactions with details, including converted amount and currency',
+    schema: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          createdAt: { type: 'string', format: 'date-time' },
+          description: { type: 'string' },
+          originalCurrency: { type: 'string' },
+          originalAmount: { type: 'number' },
+          convertedAmount: { type: 'number' },
+          convertedCurrency: { type: 'string' },
+        },
+      },
+    },
+  })
   async getUserTransactions(@Request() req) {
     return this.transactionsService.getUserTransactionsWithDetails(req.user.id);
   }
@@ -34,11 +51,19 @@ export class TransactionsController {
 
   @Post()
   @ApiOperation({ summary: 'Create a manual transaction' })
+  @ApiBody({ type: CreateTransactionNoConvertedCurrencyDto }) // Use the new DTO class
   @ApiResponse({ status: 201, description: 'Transaction created successfully' })
   async createManualTransaction(
     @Request() req,
-    @Body() body: CreateTransactionDto
+    @Body() body: CreateTransactionNoConvertedCurrencyDto // Use the new DTO class
   ) {
-    return this.transactionsService.createManualTransaction(req.user.id, body);
+    // Use the user's currency from the JWT
+    const userCurrency = req.user.currency;
+
+    // Pass the user's currency to the service
+    return this.transactionsService.createManualTransaction(req.user.id, {
+      ...body,
+      convertedCurrency: userCurrency, // Always use the user's currency
+    });
   }
 }
