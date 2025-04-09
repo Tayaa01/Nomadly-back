@@ -1,7 +1,9 @@
 import { Controller, Get, Query, Logger } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
 import { DealsAggregatorService } from '../services/deals-aggregator.service';
 import { DealSearchParams, DealResponse, Deal } from '../interfaces/deal.interface';
 
+@ApiTags('Deals') // Add Swagger tag for the Deals module
 @Controller('deals')
 export class DealsController {
   private readonly logger = new Logger(DealsController.name);
@@ -9,6 +11,65 @@ export class DealsController {
   constructor(private readonly dealsAggregator: DealsAggregatorService) {}
 
   @Get('search')
+  @ApiOperation({ summary: 'Search for deals', description: 'Search for deals based on various filters and parameters.' })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns a list of deals with pagination and metadata.',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean' },
+        data: {
+          type: 'object',
+          properties: {
+            recommendations: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  title: { type: 'string' },
+                  description: { type: 'string' },
+                  url: { type: 'string' },
+                  price: { type: 'object' },
+                  promoCode: { type: 'string', nullable: true },
+                  retailer: { type: 'object' },
+                  category: { type: 'string' },
+                  lastVerified: { type: 'string', format: 'date-time' },
+                  source: { type: 'string' },
+                  imageUrl: { type: 'string', nullable: true },
+                  metadata: { type: 'object' },
+                },
+              },
+            },
+            discounts: { type: 'array', items: { type: 'string' } },
+            reasons: { type: 'array', items: { type: 'string' } },
+            savingsTips: { type: 'array', items: { type: 'string' } },
+            metadata: { type: 'object' },
+          },
+        },
+        pagination: {
+          type: 'object',
+          properties: {
+            currentPage: { type: 'number' },
+            totalPages: { type: 'number' },
+            totalItems: { type: 'number' },
+            itemsPerPage: { type: 'number' },
+          },
+        },
+      },
+    },
+  })
+  @ApiQuery({ name: 'country', required: false, description: 'Country to search deals in (default: global)', example: 'US' })
+  @ApiQuery({ name: 'category', required: false, description: 'Category of deals (default: travel)', example: 'travel' })
+  @ApiQuery({ name: 'specific', required: false, description: 'Specific keyword to filter deals', example: 'flights' })
+  @ApiQuery({ name: 'radius', required: false, description: 'Search radius in kilometers', example: 50 })
+  @ApiQuery({ name: 'latitude', required: false, description: 'Latitude for location-based search', example: 37.7749 })
+  @ApiQuery({ name: 'longitude', required: false, description: 'Longitude for location-based search', example: -122.4194 })
+  @ApiQuery({ name: 'minDiscount', required: false, description: 'Minimum discount percentage', example: 10 })
+  @ApiQuery({ name: 'maxPrice', required: false, description: 'Maximum price for deals', example: 100 })
+  @ApiQuery({ name: 'sortBy', required: false, description: 'Sort deals by discount, price, distance, or rating', example: 'discount' })
+  @ApiQuery({ name: 'page', required: false, description: 'Page number for pagination (default: 1)', example: 1 })
+  @ApiQuery({ name: 'limit', required: false, description: 'Number of items per page (default: 5)', example: 5 })
   async searchDeals(
     @Query('country') country = 'global',
     @Query('category') category = 'travel',
@@ -105,6 +166,109 @@ export class DealsController {
       return {
         success: false,
         error: error.message || 'Failed to fetch deals',
+        data: null,
+      };
+    }
+  }
+
+  @Get('hunt')
+  @ApiOperation({ summary: 'Hunt for deals', description: 'Quickly find the best deals with minimal input.' })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns a list of the best deals.',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean' },
+        data: {
+          type: 'object',
+          properties: {
+            recommendations: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  title: { type: 'string' },
+                  description: { type: 'string' },
+                  url: { type: 'string' },
+                  price: { type: 'object' },
+                  retailer: { type: 'object' },
+                  category: { type: 'string' },
+                  lastVerified: { type: 'string', format: 'date-time' },
+                },
+              },
+            },
+            discounts: { type: 'array', items: { type: 'string' } },
+            reasons: { type: 'array', items: { type: 'string' } },
+            savingsTips: { type: 'array', items: { type: 'string' } },
+            metadata: { type: 'object' },
+          },
+        },
+      },
+    },
+  })
+  @ApiQuery({ name: 'category', required: false, description: 'Category of deals (default: travel)', example: 'travel' })
+  @ApiQuery({ name: 'country', required: false, description: 'Country to search deals in (default: global)', example: 'US' })
+  async huntDeals(
+    @Query('category') category = 'travel',
+    @Query('country') country = 'global',
+  ): Promise<DealResponse> {
+    try {
+      this.logger.debug(`Hunting for ${category} deals in ${country}`);
+
+      const searchParams: DealSearchParams = {
+        country: country.toLowerCase().trim(),
+        category: category.toLowerCase().trim(),
+        specific: undefined,
+        radius: undefined,
+        latitude: undefined,
+        longitude: undefined,
+        minDiscount: 10,
+        maxPrice: undefined,
+        sortBy: 'discount' as 'discount',
+      };
+
+      const analysis = await this.dealsAggregator.searchDeals(searchParams);
+
+      if (!analysis.recommendations.length) {
+        return {
+          success: false,
+          error: `No ${category} deals found in ${country}`,
+          data: null,
+        };
+      }
+
+      const topDeals = analysis.recommendations.slice(0, 5);
+
+      return {
+        success: true,
+        data: {
+          recommendations: topDeals.map(deal => ({
+            title: deal.title,
+            description: deal.description,
+            url: deal.url,
+            price: deal.price,
+            retailer: deal.retailer,
+            category: deal.category,
+            lastVerified: deal.lastVerified,
+            source: deal.source, // Include the source property
+          })),
+          discounts: topDeals.map(deal => `${deal.price?.discountPercentage || 0}% off at ${deal.retailer.name}`),
+          reasons: topDeals.flatMap(deal => deal.metadata?.reasons || []),
+          savingsTips: analysis.savingsTips || [],
+          metadata: {
+            timestamp: new Date().toISOString(),
+            country,
+            category,
+            resultsCount: topDeals.length,
+          },
+        },
+      };
+    } catch (error) {
+      this.logger.error('Error in huntDeals:', error);
+      return {
+        success: false,
+        error: error.message || 'Failed to hunt deals',
         data: null,
       };
     }
