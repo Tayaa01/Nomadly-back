@@ -14,8 +14,22 @@ export class TransactionsService {
   ) {}
 
   async create(transactionData: Partial<Transaction>): Promise<Transaction> {
-    const transaction = new this.transactionModel(transactionData);
-    return transaction.save();
+    console.log('Creating transaction in database:', transactionData);
+
+    try {
+      // Ensure userId is a Types.ObjectId
+      if (transactionData.userId && typeof transactionData.userId === 'string') {
+        transactionData.userId = new Types.ObjectId(transactionData.userId);
+      }
+
+      const transaction = new this.transactionModel(transactionData);
+      const savedTransaction = await transaction.save();
+      console.log('Transaction saved to database:', savedTransaction);
+      return savedTransaction;
+    } catch (error) {
+      console.error('Error saving transaction to database:', error);
+      throw error; // Re-throw the error to ensure it is logged and handled
+    }
   }
 
   async createManualTransaction(userId: string, data: { amount: number; currency: string; date: string; description: string; convertedCurrency: string }): Promise<Transaction> {

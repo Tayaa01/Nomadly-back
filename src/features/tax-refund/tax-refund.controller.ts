@@ -10,6 +10,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TransactionsService } from '../transactions/transactions.service';
 import { Express } from 'express';
 import { SavingsService } from '../savings/savings.service';
+import { Types } from 'mongoose'; // Import Types from mongoose
 
 @ApiTags('Tax Free Shopping')
 @Controller('tax-free')
@@ -21,7 +22,7 @@ export class TaxRefundController {
     private readonly currencyConverterService: CurrencyConverterService,
     private readonly taxRefundService: TaxRefundService,
     private readonly transactionsService: TransactionsService,
-    private readonly savingsService: SavingsService  // Add this line
+    private readonly savingsService: SavingsService
   ) {}
 
   @Post('analyze')
@@ -60,7 +61,6 @@ export class TaxRefundController {
           description: 'Country code where purchase was made (e.g., FR, US)',
           example: 'FR'
         }
-        // Removed targetCountry parameter from API documentation
       }
     }
   })
@@ -103,7 +103,6 @@ export class TaxRefundController {
     @Request() req,
     @UploadedFile() file: Express.Multer.File,
     @Body('country') country: string
-    // Removed targetCountry parameter
   ) {
     console.log('Request headers:', req.headers);
     console.log('Authenticated user:', req.user);
@@ -121,7 +120,7 @@ export class TaxRefundController {
     // Use enhanced image analysis that extracts more details
     const analysis = await this.geminiService.analyzeImageWithDescription(file.buffer);
     const sourceCountryData = getCountryData(country);
-    const targetCountryData = getCountryData(userCountryCode); // Use user's country code
+    const targetCountryData = getCountryData(userCountryCode);
 
     if (!sourceCountryData) {
       return {
@@ -140,7 +139,6 @@ export class TaxRefundController {
         },
         country: sourceCountryData.name,
         category: analysis.category || undefined
-        // Explicitly NOT including items
       }
     };
 
@@ -239,8 +237,8 @@ export class TaxRefundController {
 
     // Save transaction
     if (taxInfo.eligible) {
-      await this.transactionsService.create({
-        userId: req.user.id,
+      const transactionData = {
+        userId: new Types.ObjectId(req.user.id), // Convert userId to ObjectId
         originalAmount: analysis.amount,
         originalCurrency: sourceCountryData.currency,
         convertedAmount: response.bill.convertedAmount?.value || analysis.amount,
@@ -251,7 +249,16 @@ export class TaxRefundController {
         country: country,
         hasTaxRefund: true,
         scanDate: new Date()
-      });
+      };
+
+      console.log('Saving transaction:', transactionData);
+
+      try {
+        await this.transactionsService.create(transactionData); // Do not include createdAt
+        console.log('Transaction saved successfully.');
+      } catch (error) {
+        console.error('Error saving transaction:', error);
+      }
     }
 
     // Add descriptive details to the response

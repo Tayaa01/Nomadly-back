@@ -8,7 +8,7 @@ import { SavingsModule } from '../savings/savings.module';
 
 @Module({
   imports: [
-    TransactionsModule,
+    TransactionsModule, // Ensure this is imported
     GeminiModule,
     CurrencyConverterModule,
     SavingsModule

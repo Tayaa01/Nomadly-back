@@ -4,7 +4,7 @@ import { Document, Types, Schema as MongooseSchema } from 'mongoose';
 @Schema({ timestamps: true })
 export class Transaction {
   @Prop({ type: Types.ObjectId, ref: 'User', required: true })
-  userId: Types.ObjectId; // Changed from User to Types.ObjectId
+  userId: Types.ObjectId;
 
   @Prop({ required: true })
   originalAmount: number;
@@ -12,10 +12,10 @@ export class Transaction {
   @Prop({ required: true })
   originalCurrency: string;
 
-  @Prop({ required: true, default: 0 }) // Default value for convertedAmount
+  @Prop({ required: true, default: 0 })
   convertedAmount: number;
 
-  @Prop({ required: true, default: 'USD' }) // Default value for convertedCurrency
+  @Prop({ required: true, default: 'USD' })
   convertedCurrency: string;
 
   @Prop({ required: true })
@@ -36,11 +36,8 @@ export class Transaction {
   @Prop({ type: Boolean, default: false })
   hasTaxRefund: boolean;
 
-  @Prop()
-  createdAt?: Date; // Add createdAt as an optional property
-
-  @Prop()
-  updatedAt?: Date; // Add updatedAt as an optional property
+  @Prop({ type: Date }) // Add createdAt explicitly
+  createdAt?: Date;
 }
 
 export type TransactionDocument = Transaction & Document;
