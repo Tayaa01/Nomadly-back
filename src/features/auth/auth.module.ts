@@ -17,7 +17,7 @@ import { UsersModule } from '../../users/users.module';  // Updated import path
       useFactory: async (configService: ConfigService) => ({
         secret: configService.get<string>('JWT_SECRET'),
         signOptions: { 
-          expiresIn: '24h',
+          expiresIn: '30d', // Changed from '24h' to '30d' for 30-day expiration
           algorithm: 'HS256'
         },
       }),
