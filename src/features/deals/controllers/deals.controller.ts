@@ -1,4 +1,4 @@
-import { Controller, Get, Query, Logger } from '@nestjs/common';
+import { Controller, Get, Query, Logger, BadRequestException } from '@nestjs/common'; // Import BadRequestException
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
 import { DealsAggregatorService } from '../services/deals-aggregator.service';
 import { DealSearchParams, DealResponse, Deal } from '../interfaces/deal.interface';
@@ -81,7 +81,7 @@ export class DealsController {
     @Query('maxPrice') maxPrice?: number,
     @Query('sortBy') sortBy?: 'discount' | 'price' | 'distance' | 'rating',
     @Query('page') page = 1,
-    @Query('limit') limit = 5,
+    @Query('limit') limit = 8,
   ): Promise<DealResponse> {
     try {
       // Validate category
@@ -171,6 +171,375 @@ export class DealsController {
     }
   }
 
+  @Get('travel')
+  @ApiOperation({ summary: 'Search for travel deals', description: 'Search specifically for travel deals based only on country, with pagination.' })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns a list of travel deals with pagination and metadata.',
+    schema: { // Reusing the same schema as searchDeals
+      type: 'object',
+      properties: {
+        success: { type: 'boolean' },
+        data: {
+          type: 'object',
+          properties: {
+            recommendations: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  title: { type: 'string' },
+                  description: { type: 'string' },
+                  url: { type: 'string' },
+                  price: { type: 'object' },
+                  promoCode: { type: 'string', nullable: true },
+                  retailer: { type: 'object' },
+                  category: { type: 'string', example: 'travel' }, // Example fixed to travel
+                  lastVerified: { type: 'string', format: 'date-time' },
+                  source: { type: 'string' },
+                  imageUrl: { type: 'string', nullable: true },
+                  metadata: { type: 'object' },
+                },
+              },
+            },
+            discounts: { type: 'array', items: { type: 'string' } },
+            reasons: { type: 'array', items: { type: 'string' } },
+            savingsTips: { type: 'array', items: { type: 'string' } },
+            metadata: { type: 'object' },
+          },
+        },
+        pagination: {
+          type: 'object',
+          properties: {
+            currentPage: { type: 'number' },
+            totalPages: { type: 'number' },
+            totalItems: { type: 'number' },
+            itemsPerPage: { type: 'number' },
+          },
+        },
+      },
+    },
+  })
+  @ApiQuery({ name: 'country', required: false, description: 'Country to search deals in (default: global)', example: 'US' })
+  @ApiQuery({ name: 'page', required: false, description: 'Page number for pagination (default: 1)', example: 1 })
+  @ApiQuery({ name: 'limit', required: false, description: 'Number of items per page (default: 5)', example: 5 })
+  async searchTravelDeals(
+    @Query('country') country = 'global',
+    @Query('page') page = 1,
+    @Query('limit') limit = 8,
+  ): Promise<DealResponse> {
+    const category = 'travel'; // Hardcode category to 'travel'
+    try {
+      this.logger.debug(`Searching ${category} deals in ${country} (simplified)`);
+
+      // Normalize inputs
+      country = country.toLowerCase().trim();
+
+      const searchParams: DealSearchParams = {
+        country,
+        category, // Use the hardcoded category
+        specific: undefined,
+        radius: undefined,
+        latitude: undefined,
+        longitude: undefined,
+        minDiscount: undefined,
+        maxPrice: undefined,
+        sortBy: undefined,
+      };
+
+      const analysis = await this.dealsAggregator.searchDeals(searchParams);
+
+      if (!analysis.recommendations.length) {
+        return {
+          success: false,
+          error: `No ${category} deals found in ${country}`,
+          data: null,
+        };
+      }
+
+      // Calculate pagination
+      const totalItems = analysis.recommendations.length;
+      const totalPages = Math.ceil(totalItems / limit);
+      const start = (page - 1) * limit;
+      const paginatedDeals = analysis.recommendations.slice(start, start + limit);
+
+      return {
+        success: true,
+        data: {
+          recommendations: paginatedDeals.map(deal => ({
+            title: deal.title,
+            description: deal.description,
+            url: deal.url,
+            price: deal.price,
+            promoCode: deal.promoCode,
+            retailer: deal.retailer,
+            category: deal.category, // Will always be 'travel'
+            lastVerified: deal.lastVerified,
+            source: deal.source,
+            imageUrl: deal.imageUrl,
+            metadata: {
+              ...deal.metadata,
+              categorySpecific: this.getCategorySpecificMetadata(deal, category),
+            },
+          })),
+          discounts: analysis.discounts || paginatedDeals.map(d => `${d.price?.discountPercentage || 0}% off at ${d.retailer.name}`),
+          reasons: analysis.reasons || paginatedDeals.flatMap(d => d.metadata?.reasons || []),
+          savingsTips: analysis.savingsTips,
+          metadata: {
+            ...analysis.metadata,
+            timestamp: new Date().toISOString(),
+            country,
+            category,
+            resultsCount: totalItems,
+          },
+        },
+        pagination: {
+          currentPage: page,
+          totalPages,
+          totalItems,
+          itemsPerPage: limit,
+        },
+      };
+    } catch (error) {
+      this.logger.error(`Error in searchTravelDeals for ${category} in ${country}:`, error);
+      return {
+        success: false,
+        error: error.message || `Failed to fetch ${category} deals`,
+        data: null,
+      };
+    }
+  }
+
+  @Get('travel/packages')
+  @ApiOperation({ summary: 'Search for travel packages', description: 'Search for travel packages (e.g., flight + hotel) between two countries.' })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns a list of travel package deals with pagination and metadata.',
+    schema: { // Reusing the same schema as searchDeals/searchTravelDeals
+      type: 'object',
+      properties: {
+        success: { type: 'boolean' },
+        data: {
+          type: 'object',
+          properties: {
+            recommendations: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  title: { type: 'string' },
+                  description: { type: 'string' },
+                  url: { type: 'string' },
+                  price: { type: 'object' },
+                  promoCode: { type: 'string', nullable: true },
+                  retailer: { type: 'object' },
+                  category: { type: 'string', example: 'travel' }, // Example fixed to travel
+                  lastVerified: { type: 'string', format: 'date-time' },
+                  source: { type: 'string' },
+                  imageUrl: { type: 'string', nullable: true },
+                  metadata: { type: 'object' },
+                },
+              },
+            },
+            discounts: { type: 'array', items: { type: 'string' } },
+            reasons: { type: 'array', items: { type: 'string' } },
+            savingsTips: { type: 'array', items: { type: 'string' } },
+            metadata: { type: 'object' },
+          },
+        },
+        pagination: {
+          type: 'object',
+          properties: {
+            currentPage: { type: 'number' },
+            totalPages: { type: 'number' },
+            totalItems: { type: 'number' },
+            itemsPerPage: { type: 'number' },
+          },
+        },
+      },
+    },
+  })
+  @ApiQuery({ name: 'departureCountry', required: true, description: 'Departure country name or code', example: 'USA' })
+  @ApiQuery({ name: 'arrivalCountry', required: true, description: 'Arrival country name or code', example: 'France' })
+  @ApiQuery({ name: 'specific', required: false, description: 'Specific keywords for the package (e.g., beach, city break)', example: 'beach' })
+  @ApiQuery({ name: 'page', required: false, description: 'Page number for pagination (default: 1)', example: 1 })
+  @ApiQuery({ name: 'limit', required: false, description: 'Number of items per page (default: 5)', example: 5 })
+  async searchTravelPackages(
+    @Query('departureCountry') departureCountry: string,
+    @Query('arrivalCountry') arrivalCountry: string,
+    @Query('specific') specific?: string, // Optional specific keywords
+    @Query('page') page = 1,
+    @Query('limit') limit = 8,
+  ): Promise<DealResponse> {
+    const category = 'travel'; // Hardcode category
+
+    // Basic validation
+    if (!departureCountry || !arrivalCountry) {
+        throw new BadRequestException('Departure and arrival countries are required.');
+    }
+
+    try {
+      this.logger.debug(`Searching ${category} packages from ${departureCountry} to ${arrivalCountry}`);
+
+      // Normalize inputs
+      const normDepartureCountry = departureCountry.toLowerCase().trim();
+      const normArrivalCountry = arrivalCountry.toLowerCase().trim();
+
+      const searchParams: DealSearchParams = {
+        country: normArrivalCountry, // Use arrival country as primary context for Serper 'gl' param
+        category,
+        departureCountry: normDepartureCountry,
+        arrivalCountry: normArrivalCountry,
+        specific, // Pass specific keywords if provided
+        // Set other params to undefined as they are not used for this endpoint
+        radius: undefined,
+        latitude: undefined,
+        longitude: undefined,
+        minDiscount: undefined,
+        maxPrice: undefined,
+        sortBy: undefined, // Let SerperService sorting handle package relevance
+      };
+
+      // Assuming DealsAggregatorService.searchDeals now accepts the updated DealSearchParams
+      const analysis = await this.dealsAggregator.searchDeals(searchParams);
+
+      if (!analysis.recommendations.length) {
+        return {
+          success: false,
+          error: `No ${category} packages found from ${departureCountry} to ${arrivalCountry}`,
+          data: null,
+        };
+      }
+
+      // Calculate pagination
+      const totalItems = analysis.recommendations.length;
+      const totalPages = Math.ceil(totalItems / limit);
+      const start = (page - 1) * limit;
+      const paginatedDeals = analysis.recommendations.slice(start, start + limit);
+
+      // Format response (similar to other endpoints)
+      return {
+        success: true,
+        data: {
+          recommendations: paginatedDeals.map(deal => ({
+            title: deal.title,
+            description: deal.description,
+            url: deal.url,
+            price: deal.price,
+            promoCode: deal.promoCode,
+            retailer: deal.retailer,
+            category: deal.category, // Should be 'travel'
+            lastVerified: deal.lastVerified,
+            source: deal.source,
+            imageUrl: deal.imageUrl,
+            metadata: {
+              ...deal.metadata,
+              // Add package specific metadata if possible/needed later
+              categorySpecific: this.getCategorySpecificMetadata(deal, category),
+            },
+          })),
+          discounts: analysis.discounts || paginatedDeals.map(d => `${d.price?.discountPercentage || 0}% off at ${d.retailer.name}`),
+          reasons: analysis.reasons || paginatedDeals.flatMap(d => d.metadata?.reasons || []),
+          savingsTips: analysis.savingsTips,
+          metadata: {
+            ...analysis.metadata,
+            timestamp: new Date().toISOString(),
+            departureCountry: normDepartureCountry, // Add package context to metadata
+            arrivalCountry: normArrivalCountry,
+            category,
+            resultsCount: totalItems,
+          },
+        },
+        pagination: {
+          currentPage: page,
+          totalPages,
+          totalItems,
+          itemsPerPage: limit,
+        },
+      };
+    } catch (error) {
+      this.logger.error(`Error in searchTravelPackages from ${departureCountry} to ${arrivalCountry}:`, error);
+      // Handle potential BadRequestException from validation
+      if (error instanceof BadRequestException) {
+          throw error;
+      }
+      return {
+        success: false,
+        error: error.message || `Failed to fetch ${category} packages`,
+        data: null,
+      };
+    }
+  }
+
+  @Get('travel/cheapest')
+  async searchCheapestTravelOffers(
+    @Query('destination') destination: string,
+    @Query('page') page = 1,
+    @Query('limit') limit = 8,
+  ): Promise<DealResponse> {
+    if (!destination) {
+      throw new BadRequestException('Destination is required');
+    }
+    try {
+      const deals = await this.dealsAggregator.searchCheapestTravelOffers(destination);
+
+      if (!deals.length) {
+        return {
+          success: false,
+          error: `No travel offers found to ${destination}`,
+          data: null,
+        };
+      }
+
+      const totalItems = deals.length;
+      const totalPages = Math.ceil(totalItems / limit);
+      const start = (page - 1) * limit;
+      const paginatedDeals = deals.slice(start, start + limit);
+
+      return {
+        success: true,
+        data: {
+          recommendations: paginatedDeals.map(deal => ({
+            title: deal.title,
+            description: deal.description,
+            url: deal.url,
+            price: deal.price,
+            promoCode: deal.promoCode,
+            retailer: deal.retailer,
+            category: deal.category,
+            lastVerified: deal.lastVerified,
+            source: deal.source,
+            imageUrl: deal.imageUrl,
+            metadata: deal.metadata,
+          })),
+          discounts: [],
+          reasons: [],
+          savingsTips: [],
+          metadata: {
+            timestamp: new Date().toISOString(),
+            country: destination,
+            arrivalCountry: destination,
+            category: 'travel',
+            resultsCount: totalItems,
+          },
+        },
+        pagination: {
+          currentPage: page,
+          totalPages,
+          totalItems,
+          itemsPerPage: limit,
+        },
+      };
+    } catch (error) {
+      this.logger.error('Error in searchCheapestTravelOffers:', error);
+      return {
+        success: false,
+        error: error.message || 'Failed to fetch cheapest travel offers',
+        data: null,
+      };
+    }
+  }
+
   @Get('hunt')
   @ApiOperation({ summary: 'Hunt for deals', description: 'Quickly find the best deals with minimal input.' })
   @ApiResponse({
@@ -252,6 +621,7 @@ export class DealsController {
             category: deal.category,
             lastVerified: deal.lastVerified,
             source: deal.source, // Include the source property
+            imageUrl: deal.imageUrl,
           })),
           discounts: topDeals.map(deal => `${deal.price?.discountPercentage || 0}% off at ${deal.retailer.name}`),
           reasons: topDeals.flatMap(deal => deal.metadata?.reasons || []),

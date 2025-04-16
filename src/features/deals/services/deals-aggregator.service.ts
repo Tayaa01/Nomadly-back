@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
 import { Deal, DealSearchParams, DealAnalysis } from '../interfaces/deal.interface';
 import { SerperService } from './serper.service';
+import { TravelSerperService } from './travel-serper.service'; // Import the new service
 import { GeminiService } from './gemini.service';
 
 @Injectable()
@@ -16,6 +17,7 @@ export class DealsAggregatorService {
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
     private readonly serperService: SerperService,
+    private readonly travelSerperService: TravelSerperService, // Inject TravelSerperService
     private readonly geminiService: GeminiService,
   ) {}
 
@@ -29,19 +31,31 @@ export class DealsAggregatorService {
         return cached.data;
       }
 
-      const deals = await this.serperService.searchForDeals(
-        params.country,
-        params.category,
-        params.specific,
-      );
+      let deals: Deal[];
 
-      this.logger.debug(`Fetched ${deals.length} raw deals from Serper`);
+      if (params.category === 'travel' && params.departureCountry && params.arrivalCountry) {
+        this.logger.debug(`Using TravelSerperService for package search from ${params.departureCountry} to ${params.arrivalCountry}`);
+        deals = await this.travelSerperService.searchForTravelPackages({
+          departureCountry: params.departureCountry,
+          arrivalCountry: params.arrivalCountry,
+          specific: params.specific,
+        });
+      } else {
+        this.logger.debug(`Using general SerperService for category ${params.category} in ${params.country}`);
+        deals = await this.serperService.searchForDeals(
+          params.country,
+          params.category,
+          params.specific,
+        );
+      }
+
+      this.logger.debug(`Fetched ${deals.length} raw deals`);
 
       if (deals.length === 0) {
-        throw new HttpException(
-          `No deals found for ${params.category} in ${params.country}`,
-          HttpStatus.NOT_FOUND
-        );
+        const message = (params.departureCountry && params.arrivalCountry)
+          ? `No travel packages found from ${params.departureCountry} to ${params.arrivalCountry}`
+          : `No deals found for ${params.category} in ${params.country}`;
+        throw new HttpException(message, HttpStatus.NOT_FOUND);
       }
 
       const enrichedDeals = await this.enrichDealsWithLocation(deals);
@@ -69,6 +83,8 @@ export class DealsAggregatorService {
             category: params.category,
             country: params.country,
             specific: params.specific,
+            ...(params.departureCountry && { departureCountry: params.departureCountry }),
+            ...(params.arrivalCountry && { arrivalCountry: params.arrivalCountry }),
           }
         }
       };
@@ -88,8 +104,12 @@ export class DealsAggregatorService {
     }
   }
 
+  async searchCheapestTravelOffers(destination: string): Promise<Deal[]> {
+    return this.travelSerperService.searchForCheapestTravelOffers(destination);
+  }
+
   private generateCacheKey(params: DealSearchParams): string {
-    return `${params.category}-${params.country}-${params.specific || ''}-${params.minDiscount || ''}-${params.maxPrice || ''}`;
+    return `${params.category}-${params.country}-${params.specific || ''}-${params.minDiscount || ''}-${params.maxPrice || ''}-${params.departureCountry || ''}-${params.arrivalCountry || ''}-${params.latitude || ''}-${params.longitude || ''}-${params.radius || ''}`;
   }
 
   private async enrichDealsWithLocation(deals: Deal[]): Promise<Deal[]> {

@@ -217,6 +217,7 @@ export const COUNTRY_CODES: { [key: string]: string } = {
   'tonga': 'TO',
   'trinidad and tobago': 'TT',
   'tunisia': 'TN',
+  'tunis': 'TN',
   'turkey': 'TR',
   'turkmenistan': 'TM',
   'turks and caicos islands': 'TC',
@@ -238,4 +239,4 @@ export const COUNTRY_CODES: { [key: string]: string } = {
   'yemen': 'YE',
   'zambia': 'ZM',
   'zimbabwe': 'ZW'
-}; 
+};

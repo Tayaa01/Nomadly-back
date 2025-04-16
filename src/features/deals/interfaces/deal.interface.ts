@@ -47,7 +47,7 @@ export interface Deal {
 }
 
 export interface DealSearchParams {
-  country: string;
+  country: string; // Keep for general context or fallback
   category: string;
   specific?: string;
   radius?: number;
@@ -56,6 +56,8 @@ export interface DealSearchParams {
   minDiscount?: number;
   maxPrice?: number;
   sortBy?: 'discount' | 'price' | 'distance' | 'rating';
+  departureCountry?: string; // New: For travel packages
+  arrivalCountry?: string;   // New: For travel packages
 }
 
 export interface DealAnalysis {
@@ -68,6 +70,8 @@ export interface DealAnalysis {
     country: string;
     category: string;
     resultsCount: number;
+    departureCountry?: string; // Add optional departure country
+    arrivalCountry?: string;   // Add optional arrival country
     averageDiscount?: number;
     topRetailer?: string;
     nearbyStores?: number;
