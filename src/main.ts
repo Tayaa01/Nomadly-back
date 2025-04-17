@@ -44,6 +44,9 @@ async function bootstrap() {
     },
   }));
 
+  // Enable CORS for all origins (for development)
+  app.enableCors();
+
   // Updated CORS Configuration
   const allowedOrigins = process.env.ALLOWED_ORIGINS.split(',');
   app.enableCors({
@@ -54,21 +57,24 @@ async function bootstrap() {
         return;
       }
       
+      // Sanitize origin: trim and remove invisible characters
+      const cleanOrigin = origin.trim().replace(/[\u200B-\u200D\uFEFF]/g, '');
+      
       // Check if the origin matches any allowed pattern
       const isAllowed = allowedOrigins.some(allowedOrigin => {
         // Handle wildcard domains
         if (allowedOrigin.includes('*')) {
           const pattern = allowedOrigin.replace(/\./g, '\\.').replace(/\*/g, '.*');
-          return new RegExp(`^${pattern}$`).test(origin);
+          return new RegExp(`^${pattern}$`).test(cleanOrigin);
         }
-        return allowedOrigin === origin;
+        return allowedOrigin === cleanOrigin;
       });
       
       if (isAllowed) {
         callback(null, true);
       } else {
-        console.log(`Blocked CORS for: ${origin}`);
-        callback(new Error(`Origin ${origin} not allowed by CORS`));
+        console.log(`Blocked CORS for: ${cleanOrigin}`);
+        callback(new Error(`Origin ${cleanOrigin} not allowed by CORS`));
       }
     },
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
