@@ -7,13 +7,15 @@ import { Plan, PlanDocument } from './schemas/plan.schema';
 
 interface TravelRequest {
   country: string;
-  budget: number;
+  city: string; // Add city
+  budget?: number; // Make budget optional here too
   days: number;
   startDate: string;
 }
 
 interface BudgetOptimizedTravelRequest {
   country: string;
+  city: string; // Add city
   days: number;
   startDate: string;
 }
@@ -33,6 +35,29 @@ export class OpenaitryService {
   private readonly logger = new Logger(OpenaitryService.name);
   private genAI: GoogleGenerativeAI;
   private weatherApiKey = '8c73beaa1cca73a2ac04160f9ff053cb';
+
+  private readonly cityMap = {
+    'France': 'Paris',
+    'Italy': 'Rome',
+    'Spain': 'Madrid',
+    'Germany': 'Berlin',
+    'UK': 'London',
+    'United Kingdom': 'London',
+    'Japan': 'Tokyo',
+    'China': 'Beijing',
+    'USA': 'New York',
+    'United States': 'New York',
+    'Canada': 'Toronto',
+    'Australia': 'Sydney',
+    'Thailand': 'Bangkok',
+    'Vietnam': 'Hanoi',
+    'Indonesia': 'Jakarta',
+    'Brazil': 'Rio de Janeiro',
+    'Mexico': 'Mexico City',
+    'India': 'New Delhi',
+    'South Korea': 'Seoul',
+    'Russia': 'Moscow',
+  };
 
   constructor(
     @InjectModel(Plan.name) private readonly planModel: Model<PlanDocument>
@@ -298,6 +323,7 @@ export class OpenaitryService {
 
     if (existingPlan) {
       this.logger.log(`Updating existing plan for user: ${userId}`);
+      // Ensure city is updated if provided
       Object.assign(existingPlan, planData);
       return existingPlan.save();
     } else {
@@ -317,12 +343,12 @@ export class OpenaitryService {
 
   async generateItinerary(travelRequest: TravelRequest, userId: string): Promise<PlanDocument> {
     const startTime = new Date().toISOString();
-    this.logger.log(`Starting itinerary generation at ${startTime} for ${travelRequest.country}`);
+    this.logger.log(`Starting itinerary generation at ${startTime} for ${travelRequest.city}, ${travelRequest.country}`); // Log city
 
     try {
       const model = this.genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
       
-      const prompt = this.buildPrompt(travelRequest);
+      const prompt = this.buildPrompt(travelRequest); // Pass full request with city
       this.logger.log('Generated prompt for AI model');
 
       const result = await model.generateContent(prompt);
@@ -339,16 +365,17 @@ export class OpenaitryService {
       const itinerary = this.parseItineraryResponse(response);
       
       // Save to database
-      const planData = {
+      const planData: Partial<Plan> = { // Use Partial<Plan>
         country: travelRequest.country,
+        city: travelRequest.city, // Save city
         days: travelRequest.days,
         startDate: travelRequest.startDate,
-        budget: travelRequest.budget,
+        budget: travelRequest.budget, // Save budget if provided
         daysContent: itinerary.days,
         additionalInfo: itinerary.additionalInfo,
         isBudgetOptimized: false
       };
-      
+
       return this.saveOrUpdatePlan(userId, planData);
     } catch (error) {
       this.logger.error('Error generating itinerary:', error);
@@ -361,12 +388,12 @@ export class OpenaitryService {
     userId: string
   ): Promise<PlanDocument> {
     const startTime = new Date().toISOString();
-    this.logger.log(`Starting budget-optimized itinerary generation at ${startTime} for ${travelRequest.country}`);
+    this.logger.log(`Starting budget-optimized itinerary generation at ${startTime} for ${travelRequest.city}, ${travelRequest.country}`); // Log city
 
     try {
       const model = this.genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
       
-      const prompt = this.buildBudgetOptimizedPrompt(travelRequest);
+      const prompt = this.buildBudgetOptimizedPrompt(travelRequest); // Pass full request with city
       this.logger.log('Generated budget-optimized prompt for AI model');
 
       const result = await model.generateContent(prompt);
@@ -387,8 +414,9 @@ export class OpenaitryService {
       const itinerary = this.parseItineraryResponse(response);
 
       // Save to database
-      const planData = {
+      const planData: Partial<Plan> = { // Use Partial<Plan>
         country: travelRequest.country,
+        city: travelRequest.city, // Save city
         days: travelRequest.days,
         startDate: travelRequest.startDate,
         estimatedBudget: estimatedBudget,
@@ -396,7 +424,7 @@ export class OpenaitryService {
         additionalInfo: itinerary.additionalInfo,
         isBudgetOptimized: true
       };
-      
+
       return this.saveOrUpdatePlan(userId, planData);
     } catch (error) {
       this.logger.error('Error generating budget-optimized itinerary:', error);
@@ -405,79 +433,85 @@ export class OpenaitryService {
   }
 
   private buildPrompt(travelRequest: TravelRequest): string {
-    return `Create a detailed daily travel itinerary table for ${travelRequest.days} days in ${travelRequest.country} with a total budget of $${travelRequest.budget} starting from ${travelRequest.startDate}.
+    // Include city in the prompt and request more activities + nightlife
+    return `Create a detailed and busy daily travel itinerary table for ${travelRequest.days} days in ${travelRequest.city}, ${travelRequest.country} with a total budget of $${travelRequest.budget || 'an unspecified budget'} starting from ${travelRequest.startDate}.
 
     Requirements:
-    1. Format the response in a clean markdown format for maximum readability
-    2. FOR EACH DAY:
-       - Create a clear heading with "## Day X: [Short title for the day]"
-       - Then create a markdown table with these columns: Time, Activity, Location, Cost
-       - Include 3-4 activities per day (morning, afternoon, evening)
-       - Add a "Daily Total" row at the end of each day's table
-    3. Ensure the total cost across all days fits within the budget of $${travelRequest.budget}
-    4. Include specific locations, attractions, and restaurants
-    5. Consider local transportation costs
-    6. Include meal recommendations
-    7. Add cost estimates for each activity
-    
+    1. Format the response in a clean markdown format for maximum readability.
+    2. Focus activities and locations specifically within ${travelRequest.city}.
+    3. FOR EACH DAY:
+       - Create a clear heading with "## Day X: [Short title for the day]".
+       - Then create a markdown table with these columns: Time, Activity, Location (within ${travelRequest.city}), Cost.
+       - Include 4-5 activities per day (morning, afternoon, evening, and nightlife).
+       - Explicitly include nightlife options like bars, clubs, live music venues, or evening entertainment suitable for ${travelRequest.city}.
+       - Add a "Daily Total" row at the end of each day's table.
+    4. Ensure the total cost across all days fits within the budget of $${travelRequest.budget || 'infinity'}.
+    5. Include specific locations, attractions, restaurants, and nightlife venues within ${travelRequest.city}.
+    6. Consider local transportation costs within ${travelRequest.city}.
+    7. Include meal recommendations (breakfast, lunch, dinner) within ${travelRequest.city}.
+    8. Add cost estimates for each activity, including potential cover charges or drink prices for nightlife.
+
     Extra tips:
-    - Suggest free activities when possible to help with budget
-    - Include local transportation options and costs
-    - Mention best times to visit specific attractions
-    - Include budget-saving tips
-    
+    - Suggest free activities when possible to help with budget.
+    - Include local transportation options (e.g., metro, bus, taxi, ride-sharing) and costs within ${travelRequest.city}, including late-night options if applicable.
+    - Mention best times to visit specific attractions in ${travelRequest.city}.
+    - Include budget-saving tips relevant to ${travelRequest.city}.
+
     Please format each day's table header as:
     | Time | Activity | Location | Cost |
 
     Additional Requirements:
-    - Currency: USD
-    - Format costs as: $X
-    - Include transportation between locations
-    - Specify opening hours when relevant
+    - Currency: USD.
+    - Format costs as: $X.
+    - Include transportation between locations within ${travelRequest.city}.
+    - Specify opening hours when relevant, especially for nightlife.
     - After all day tables, include a section called "## Additional Information" with:
-      - Total trip cost summary
-      - Local emergency contacts
-      - Weather considerations
-      - Cultural tips
-    
+      - Total trip cost summary.
+      - Local emergency contacts for ${travelRequest.city}.
+      - Weather considerations for ${travelRequest.city}.
+      - Cultural tips relevant to ${travelRequest.city}, ${travelRequest.country}, including nightlife etiquette if applicable.
+
     Current UTC DateTime: ${new Date().toISOString()}`;
   }
 
   private buildBudgetOptimizedPrompt(travelRequest: BudgetOptimizedTravelRequest): string {
-    return `Create a detailed daily travel itinerary for ${travelRequest.days} days in ${travelRequest.country} starting from ${travelRequest.startDate}, optimized for the MINIMUM POSSIBLE BUDGET.
+    // Include city in the prompt and request more activities + low-cost nightlife
+    return `Create a detailed and busy daily travel itinerary for ${travelRequest.days} days in ${travelRequest.city}, ${travelRequest.country} starting from ${travelRequest.startDate}, optimized for the MINIMUM POSSIBLE BUDGET.
 
     Requirements:
-    1. Format the response in a clean markdown format for maximum readability
-    2. FOR EACH DAY:
-       - Create a clear heading with "## Day X: [Short title for the day]"
-       - Then create a markdown table with these columns: Time, Activity, Location, Cost
-       - Include 3-4 activities per day (morning, afternoon, evening)
-       - Add a "Daily Total" row at the end of each day's table
-    3. Optimize for the LOWEST POSSIBLE BUDGET without sacrificing a decent travel experience
-    4. Include specific locations, attractions, and restaurants
-    5. Focus on free or low-cost activities and budget accommodations
-    6. Include affordable meal recommendations
-    
+    1. Format the response in a clean markdown format for maximum readability.
+    2. Focus activities and locations specifically within ${travelRequest.city}.
+    3. FOR EACH DAY:
+       - Create a clear heading with "## Day X: [Short title for the day]".
+       - Then create a markdown table with these columns: Time, Activity, Location (within ${travelRequest.city}), Cost.
+       - Include 4-5 activities per day (morning, afternoon, evening, and nightlife).
+       - Explicitly include low-cost or free nightlife options (e.g., happy hours, free entry bars, local pubs, evening walks in lively areas).
+       - Add a "Daily Total" row at the end of each day's table.
+    4. Optimize for the LOWEST POSSIBLE BUDGET without sacrificing a decent travel experience in ${travelRequest.city}.
+    5. Include specific locations, attractions, restaurants, and nightlife venues within ${travelRequest.city}.
+    6. Focus on free or low-cost activities and budget accommodations in ${travelRequest.city}.
+    7. Include affordable meal recommendations (street food, local markets, budget cafes) in ${travelRequest.city}.
+
     Budget-saving tips:
-    - Prioritize free activities and attractions
-    - Suggest affordable local transportation options
-    - Recommend street food and budget-friendly restaurants
-    - Include tips for avoiding tourist traps
-    - Suggest economical accommodation options
-    
+    - Prioritize free activities and attractions in ${travelRequest.city}.
+    - Suggest affordable local transportation options within ${travelRequest.city}, including late-night options.
+    - Recommend street food and budget-friendly restaurants/bars in ${travelRequest.city}.
+    - Include tips for finding cheap drinks or happy hour deals.
+    - Suggest economical accommodation options (hostels, budget hotels) in ${travelRequest.city}.
+
     Please format each day's table header as:
     | Time | Activity | Location | Cost |
 
     Additional Requirements:
-    - Currency: USD
-    - Format costs as: $X
-    - Include transportation between locations
+    - Currency: USD.
+    - Format costs as: $X.
+    - Include transportation between locations within ${travelRequest.city}.
     - After all day tables, include a section called "## Budget Summary" with:
-      - Total trip cost breakdown by category (accommodation, food, activities, transport)
-      - Daily average cost
-      - Money-saving tips specific to ${travelRequest.country}
-      - IMPORTANT: Include "Total Estimated Budget: $X" with the sum of all daily costs
-    
+      - Total trip cost breakdown by category (accommodation, food, activities, transport, nightlife) for ${travelRequest.city}.
+      - Daily average cost.
+      - Money-saving tips specific to ${travelRequest.city}, ${travelRequest.country}.
+      - IMPORTANT: Include "Total Estimated Budget: $X" with the sum of all daily costs.
+
     Current UTC DateTime: ${new Date().toISOString()}`;
   }
 
@@ -508,35 +542,10 @@ export class OpenaitryService {
   async getPlanWeatherForecasts(plan: PlanDocument): Promise<{ date: string, forecast: string }[]> {
     const startDate = new Date(plan.startDate);
     const forecasts = [];
-    
-    // Try to get the main city of the country for better forecasts
-    const cityMap = {
-      'France': 'Paris',
-      'Italy': 'Rome',
-      'Spain': 'Madrid',
-      'Germany': 'Berlin',
-      'UK': 'London',
-      'United Kingdom': 'London',
-      'Japan': 'Tokyo',
-      'China': 'Beijing',
-      'USA': 'New York',
-      'United States': 'New York',
-      'Canada': 'Toronto',
-      'Australia': 'Sydney',
-      'Thailand': 'Bangkok',
-      'Vietnam': 'Hanoi',
-      'Indonesia': 'Jakarta',
-      'Brazil': 'Rio de Janeiro',
-      'Mexico': 'Mexico City',
-      'India': 'New Delhi',
-      'South Korea': 'Seoul',
-      'Russia': 'Moscow',
-      // Add more countries and their main cities
-    };
-    
-    // Get the main city for the country, or use the country name if not found
-    const city = cityMap[plan.country] || plan.country;
-    
+
+    // Use the specific city from the plan if available, otherwise fallback logic
+    const city = plan.city || this.cityMap[plan.country] || plan.country; // Prioritize plan.city
+
     // Get forecasts for each day of the trip
     for (let i = 0; i < plan.days; i++) {
       const currentDate = new Date(startDate);

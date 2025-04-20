@@ -1,18 +1,25 @@
-import { IsNotEmpty, IsNumber, Min, Max, IsDateString } from 'class-validator';
+import { IsNotEmpty, IsNumber, Min, Max, IsDateString, IsString, IsInt, IsOptional } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class TravelRequestDto {
   @ApiProperty({ description: 'Country to visit', example: 'France' })
+  @IsString()
   @IsNotEmpty({ message: 'Country is required' })
   country: string;
 
-  @ApiProperty({ description: 'Budget in USD', example: 1500 })
+  @ApiProperty({ description: 'City to visit', example: 'Paris' }) // Add city property
+  @IsString()
+  @IsNotEmpty({ message: 'City is required' })
+  city: string;
+
+  @ApiProperty({ description: 'Budget in USD', example: 1500, required: false })
+  @IsOptional()
   @IsNumber({}, { message: 'Budget must be a number' })
-  @Min(1, { message: 'Budget must be greater than 0' })
-  budget: number;
+  @Min(0, { message: 'Budget must be greater than or equal to 0' })
+  budget?: number;
 
   @ApiProperty({ description: 'Number of days', example: 5 })
-  @IsNumber({}, { message: 'Days must be a number' })
+  @IsInt({ message: 'Days must be an integer' })
   @Min(1, { message: 'Minimum stay is 1 day' })
   @Max(14, { message: 'Maximum stay is 14 days' })
   days: number;
@@ -24,11 +31,17 @@ export class TravelRequestDto {
 
 export class BudgetOptimizedTravelRequestDto {
   @ApiProperty({ description: 'Country to visit', example: 'Thailand' })
+  @IsString()
   @IsNotEmpty({ message: 'Country is required' })
   country: string;
 
+  @ApiProperty({ description: 'City to visit', example: 'Bangkok' }) // Add city property
+  @IsString()
+  @IsNotEmpty({ message: 'City is required' })
+  city: string;
+
   @ApiProperty({ description: 'Number of days', example: 7 })
-  @IsNumber({}, { message: 'Days must be a number' })
+  @IsInt({ message: 'Days must be an integer' })
   @Min(1, { message: 'Minimum stay is 1 day' })
   @Max(14, { message: 'Maximum stay is 14 days' })
   days: number;

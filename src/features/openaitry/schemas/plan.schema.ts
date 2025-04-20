@@ -9,6 +9,9 @@ export class Plan {
   @Prop({ type: String, required: true })
   country: string;
 
+  @Prop({ type: String })
+  city?: string;
+
   @Prop({ type: Number, required: true })
   days: number;
 
