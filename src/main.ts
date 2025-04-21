@@ -4,37 +4,34 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
-import * as express from 'express';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // Trust proxy settings for ngrok
+  // Trust proxy settings
   const expressApp = app.getHttpAdapter().getInstance();
   expressApp.set('trust proxy', 1);
 
-  // Security Configuration
+  // Security Middleware
   app.use(helmet({
     crossOriginResourcePolicy: { policy: "cross-origin" },
     crossOriginOpenerPolicy: { policy: "unsafe-none" },
   }));
 
-  // Updated rate limiting configuration
+  // Rate Limiting
   app.use(
     rateLimit({
-      windowMs: 15 * 60 * 1000, // 15 minutes
-      max: 100, // limit each IP to 100 requests per windowMs
+      windowMs: 15 * 60 * 1000,
+      max: 100,
       message: 'Too many requests from this IP, please try again later',
       standardHeaders: true,
       legacyHeaders: false,
       skipSuccessfulRequests: false,
-      keyGenerator: (req) => {
-        return req.ip; // IP address from the most-trusted source
-      },
+      keyGenerator: (req) => req.ip,
     })
   );
 
-  // Global Validation
+  // Global Validation Pipe
   app.useGlobalPipes(new ValidationPipe({
     whitelist: true,
     forbidNonWhitelisted: true,
@@ -44,45 +41,18 @@ async function bootstrap() {
     },
   }));
 
-  // Enable CORS for all origins (for development)
-  app.enableCors();
+  // Set prefix to '/api' as requested (changed from 'eventai/api')
+  app.setGlobalPrefix('api');
 
-  // Updated CORS Configuration
-  const allowedOrigins = process.env.ALLOWED_ORIGINS.split(',');
+  // Configure CORS as requested
   app.enableCors({
-    origin: (origin, callback) => {
-      if (!origin) {
-        // Allow REST tools and server-to-server requests
-        callback(null, true);
-        return;
-      }
-      
-      // Sanitize origin: trim and remove invisible characters
-      const cleanOrigin = origin.trim().replace(/[\u200B-\u200D\uFEFF]/g, '');
-      
-      // Check if the origin matches any allowed pattern
-      const isAllowed = allowedOrigins.some(allowedOrigin => {
-        // Handle wildcard domains
-        if (allowedOrigin.includes('*')) {
-          const pattern = allowedOrigin.replace(/\./g, '\\.').replace(/\*/g, '.*');
-          return new RegExp(`^${pattern}$`).test(cleanOrigin);
-        }
-        return allowedOrigin === cleanOrigin;
-      });
-      
-      if (isAllowed) {
-        callback(null, true);
-      } else {
-        console.log(`Blocked CORS for: ${cleanOrigin}`);
-        callback(new Error(`Origin ${cleanOrigin} not allowed by CORS`));
-      }
-    },
+    origin: ['http://localhost:4200', 'http://espritmobile.com'],
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With'],
     credentials: true,
   });
 
-  // Update Swagger Documentation with security scheme
+  // Swagger Setup
   const config = new DocumentBuilder()
     .setTitle('Nomadly API')
     .setDescription('Digital nomad tools and services API')
@@ -96,40 +66,40 @@ async function bootstrap() {
         description: 'Enter your JWT token',
         in: 'header',
       },
-      'access-token', // This name here is important for reference
+      'access-token',
     )
     .addTag('Auth', 'Authentication endpoints')
     .addTag('Users', 'User management')
     .addTag('Currency', 'Currency conversion tools')
     .addTag('Translation', 'Translation services')
     .addTag('Deals', 'Tax-free shopping and deals')
-    .addServer(process.env.API_URL || 'http://localhost:3000', 'Development server')
+    .addServer('http://localhost:3000', 'Local Development Server')
+    .addServer('http://localhost:3005', 'Docker Development Server')
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
-  
-  SwaggerModule.setup('api', app, document, {
+
+  // Configure Swagger with HTTP (not HTTPS) as requested
+  SwaggerModule.setup('api-docs', app, document, {
     swaggerOptions: {
+      validatorUrl: null,
       persistAuthorization: true,
       security: [{ "access-token": [] }],
       tagsSorter: 'alpha',
       operationsSorter: 'alpha',
       docExpansion: 'none',
       filter: true,
-      syntaxHighlight: {
-        active: true,
-        theme: 'monokai'
-      },
     },
     customCss: '.swagger-ui .topbar { display: none }',
     customSiteTitle: 'Nomadly API Documentation',
   });
 
-  // Start server
-  const port = process.env.PORT || 3000;
-  // Change from 'localhost' to '0.0.0.0' to listen on all network interfaces
+  const port = 3000;
   await app.listen(port, '0.0.0.0');
+  
   console.log(`Application is running on: ${await app.getUrl()}`);
+  console.log(`API is available at: http://localhost:${port}/api`);
+  console.log(`Swagger is available at: http://localhost:${port}/api-docs`);
 }
 
 bootstrap().catch(err => {
