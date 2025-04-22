@@ -172,9 +172,7 @@ export class AuthService {
           firstName: user.firstName || 'Traveler',
         },
         headers: {
-          'X-Priority': '1', // Set high priority
-          'X-MSMail-Priority': 'High',
-          'Importance': 'High',
+          // Removed priority headers which might negatively impact spam filters
           'X-Mailer': 'Nomadly Mailer',
           'List-Unsubscribe': `<mailto:unsubscribe@nomadly.app?subject=Unsubscribe&body=${lowerCaseEmail}>`, // Use lowercase email
         }
