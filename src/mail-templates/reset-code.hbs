@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Password Reset Code</title>
+    <style>
+        body {
+            background: #181818;
+            color: #E0E0E0;
+            font-family: 'SF Pro Display', 'Segoe UI', 'Roboto', Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+        }
+
+        .card {
+            background: #101010;
+            max-width: 420px;
+            margin: 40px auto;
+            border-radius: 18px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+            overflow: hidden;
+            border: 1px solid #232323;
+            padding: 0 0 32px 0;
+        }
+
+        .brand {
+            text-align: center;
+            padding: 32px 0 0 0;
+        }
+
+        .brand-logo {
+            font-size: 2.2rem;
+            font-weight: 700;
+            color: #4CD964;
+            letter-spacing: 2px;
+            margin-bottom: 4px;
+            display: block;
+        }
+
+        .divider {
+            width: 60px;
+            height: 3px;
+            background: #4CD964;
+            margin: 24px auto 24px auto;
+            border-radius: 2px;
+        }
+
+        .content {
+            padding: 0 32px;
+            text-align: left;
+        }
+
+        .content h2 {
+            color: #fff;
+            font-size: 1.2rem;
+            font-weight: 700;
+            margin: 0 0 12px 0;
+        }
+
+        .content p {
+            color: #E0E0E0;
+            font-size: 1rem;
+            margin: 0 0 18px 0;
+            line-height: 1.7;
+        }
+
+        .reset-code {
+            background: #232323;
+            color: #4CD964;
+            font-size: 2.1rem;
+            font-weight: 700;
+            letter-spacing: 8px;
+            text-align: center;
+            border-radius: 8px;
+            padding: 18px 0;
+            margin: 24px 0 24px 0;
+            border: 1px dashed #4CD964;
+            user-select: all;
+        }
+
+        .footer {
+            background: #181818;
+            color: #888;
+            text-align: center;
+            font-size: 0.95rem;
+            padding: 24px 18px 18px 18px;
+            border-top: 1px solid #232323;
+            margin-top: 32px;
+        }
+
+        @media (max-width: 500px) {
+            .card {
+                margin: 0;
+                border-radius: 0;
+            }
+
+            .content {
+                padding: 0 6vw;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="card">
+        <div class="brand">
+            <span class="brand-logo">Nomadly</span>
+        </div>
+        <div class="divider"></div>
+        <div class="content">
+            <h2>Password Reset Request</h2>
+            <p>Hello {{ firstName }},</p>
+            <p>We received a request to reset your Nomadly account password. Use the code below to proceed. This code is
+                valid for 15 minutes.</p>
+            <div class="reset-code">{{ code }}</div>
+            <p>If you did not request a password reset, you can safely ignore this email.</p>
+        </div>
+        <div class="footer">
+            &copy; 2025 Nomadly. All rights reserved.
+        </div>
+    </div>
+</body>
+
+</html>

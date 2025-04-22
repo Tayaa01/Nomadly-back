@@ -21,7 +21,14 @@ services:
     environment:
       - MONGODB_URI=mongodb://mongo:27017/nomadly
       - NODE_ENV=production
-      # Add other env vars as needed
+      # Email configuration
+      - MAIL_HOST=smtp.gmail.com
+      - MAIL_PORT=587
+      - MAIL_SECURE=false
+      - MAIL_USER=nomadly.app2025@gmail.com
+      - MAIL_PASSWORD=jqkh skhy ldqy nkuo
+      - MAIL_FROM="Nomadly App" <nomadly.app2025@gmail.com>
+      # Other env vars as needed
 
   watchtower:
     image: containrrr/watchtower

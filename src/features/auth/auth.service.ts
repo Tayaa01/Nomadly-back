@@ -1,16 +1,26 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { MailerService } from '@nestjs-modules/mailer';
 import { UsersService } from '../../users/users.service';
 import { CreateUserDto } from '../../users/dto/create-user.dto';
 import { LoginResponse } from './interfaces/login-response.interface';
 import * as bcrypt from 'bcrypt';
+import { User, UserDocument } from 'src/users/schemas/user.schema';
+import { join } from 'path';
+import * as crypto from 'crypto';
+import { Model } from 'mongoose';
+import { InjectModel } from '@nestjs/mongoose';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name); // Initialize logger
+
   constructor(
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
-  ) {}
+    private readonly mailerService: MailerService, // Inject MailerService
+    @InjectModel(User.name) private userModel: Model<UserDocument>,
+  ) { }
 
   async validateUser(email: string, password: string): Promise<any> {
     try {
@@ -37,7 +47,7 @@ export class AuthService {
         role: userObject.role
       };
     } catch (error) {
-      console.error('Validate user error:', error);
+      this.logger.error('Validate user error:', error);
       return null;
     }
   }
@@ -70,7 +80,108 @@ export class AuthService {
   }
 
   async register(createUserDto: CreateUserDto): Promise<LoginResponse> {
-    const user = await this.usersService.create(createUserDto);
-    return this.login(user);
+    const newUser = await this.usersService.create(createUserDto);
+
+    // Send welcome email asynchronously (don't wait for it)
+    this.sendWelcomeEmail(newUser).catch(error => {
+      this.logger.error(`Failed to send welcome email to ${newUser.email}`, error.stack);
+      // Decide if you want to throw an error or just log it
+      // Depending on requirements, registration might still be considered successful
+    });
+
+    // Return login response immediately
+    return this.login(newUser);
+  }
+
+  async sendPasswordResetCode(email: string): Promise<void> {
+    const user = await this.usersService.findByEmail(email);
+    if (!user) return; // Don't reveal if user exists
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const expires = new Date(Date.now() + 15 * 60 * 1000); // 15 min expiry
+    await this.userModel.updateOne(
+      { _id: user._id },
+      { $set: { passwordResetToken: code, passwordResetExpires: expires } }
+    );
+    await this.mailerService.sendMail({
+      to: user.email,
+      subject: 'Your Nomadly Password Reset Code',
+      template: './reset-code',
+      context: { firstName: user.firstName, code },
+    });
+  }
+
+  async resetPasswordWithCode(email: string, code: string, newPassword: string): Promise<void> {
+    const user = await this.usersService.findByEmail(email);
+    this.logger.log(`User: ${user.email}, DB code: ${user.passwordResetToken}, DB expires: ${user.passwordResetExpires}, Provided code: ${code}`);
+    if (!user || !user.passwordResetToken || !user.passwordResetExpires) {
+      this.logger.warn('User, code, or expiration missing');
+      throw new Error('Invalid or expired code');
+    }
+    if (
+      user.passwordResetToken !== code ||
+      user.passwordResetExpires.getTime() < Date.now()
+    ) {
+      this.logger.warn(`Code mismatch or expired. Provided: ${code}, DB: ${user.passwordResetToken}, Expires: ${user.passwordResetExpires}, Now: ${new Date()}`);
+      throw new Error('Invalid or expired code');
+    }
+    const hashed = await bcrypt.hash(newPassword, 10);
+    await this.userModel.updateOne(
+      { _id: user._id },
+      { $set: { password: hashed }, $unset: { passwordResetToken: '', passwordResetExpires: '' } }
+    );
+  }
+
+  async changePassword(email: string, oldPassword: string, newPassword: string): Promise<void> {
+    const user = await this.usersService.findByEmail(email);
+    const isMatch = await bcrypt.compare(oldPassword, user.password);
+    if (!isMatch) {
+      throw new UnauthorizedException('Old password is incorrect');
+    }
+    const hashed = await bcrypt.hash(newPassword, 10);
+    await this.userModel.updateOne(
+      { _id: user._id },
+      { $set: { password: hashed } }
+    );
+  }
+
+  verifyJwt(token: string): any {
+    return this.jwtService.verify(token);
+  }
+
+  private async sendWelcomeEmail(user: Partial<User>): Promise<void> {
+    try {
+      // Check if required email property exists
+      if (!user.email) {
+        throw new Error('User email is missing, cannot send welcome email');
+      }
+
+      this.logger.log(`Attempting to send welcome email to ${user.email}...`);
+      this.logger.log(`Using template at ${join(process.cwd(), 'src/mail-templates/welcome.hbs')}`);
+
+      const mailResult = await this.mailerService.sendMail({
+        to: user.email,
+        subject: 'Welcome to Nomadly - Your Smart Travel Companion',
+        template: './welcome',
+        context: {
+          firstName: user.firstName || 'Traveler',
+        },
+        headers: {
+          'X-Priority': '1', // Set high priority
+          'X-MSMail-Priority': 'High',
+          'Importance': 'High',
+          'X-Mailer': 'Nomadly Mailer',
+          'List-Unsubscribe': `<mailto:unsubscribe@nomadly.app?subject=Unsubscribe&body=${user.email}>`,
+        }
+        // Removed unsupported attachDataUrls property
+      });
+
+      this.logger.log(`Welcome email sent successfully to ${user.email}`);
+      this.logger.log(`Mail response: ${JSON.stringify(mailResult)}`);
+    } catch (error) {
+      this.logger.error(`Error sending welcome email to ${user.email || 'unknown user'}`);
+      this.logger.error(`Error details: ${error.message}`);
+      this.logger.error(`Error stack: ${error.stack}`);
+      throw error;
+    }
   }
 }

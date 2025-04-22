@@ -9,7 +9,7 @@ import * as bcrypt from 'bcrypt';
 export class UsersService {
   constructor(
     @InjectModel(User.name) private userModel: Model<UserDocument>
-  ) {}
+  ) { }
 
   async create(createUserDto: CreateUserDto): Promise<Partial<User>> {
     const existingUser = await this.userModel.findOne({ email: createUserDto.email }).exec();
@@ -55,13 +55,13 @@ export class UsersService {
   async findByEmail(email: string): Promise<UserDocument> {
     const user = await this.userModel
       .findOne({ email })
-      .select('+password') // Include password field
+      .select('+password +passwordResetToken +passwordResetExpires') // Include password reset fields
       .exec();
-    
+
     if (!user) {
       throw new NotFoundException(`User with email ${email} not found`);
     }
-    
+
     return user;
   }
 
@@ -71,11 +71,11 @@ export class UsersService {
     }
 
     if (updateUserDto.email) {
-      const existingUser = await this.userModel.findOne({ 
+      const existingUser = await this.userModel.findOne({
         email: updateUserDto.email,
         _id: { $ne: id }
       }).exec();
-      
+
       if (existingUser) {
         throw new ConflictException('Email already exists');
       }

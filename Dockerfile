@@ -14,6 +14,7 @@ WORKDIR /app
 
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/dist/mail-templates ./dist/mail-templates
 COPY .env .env
 
 RUN npm install --only=production --legacy-peer-deps
