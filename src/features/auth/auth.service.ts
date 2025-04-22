@@ -24,7 +24,8 @@ export class AuthService {
 
   async validateUser(email: string, password: string): Promise<any> {
     try {
-      const user = await this.usersService.findByEmail(email);
+      const lowerCaseEmail = email.toLowerCase();
+      const user = await this.usersService.findByEmail(lowerCaseEmail); // Use lowercase email
       if (!user) {
         return null;
       }
@@ -58,7 +59,7 @@ export class AuthService {
     }
 
     const payload = {
-      email: user.email,
+      email: user.email.toLowerCase(), // Ensure email in payload is lowercase
       sub: user._id.toString(),
       role: user.role || 'user',
       countryCode: user.countryCode // Add country code to JWT payload
@@ -70,7 +71,7 @@ export class AuthService {
       access_token: this.jwtService.sign(payload),
       user: {
         id: user._id,
-        email: user.email,
+        email: user.email.toLowerCase(), // Ensure email in response is lowercase
         firstName: user.firstName,
         lastName: user.lastName,
         countryCode: user.countryCode,
@@ -94,7 +95,8 @@ export class AuthService {
   }
 
   async sendPasswordResetCode(email: string): Promise<void> {
-    const user = await this.usersService.findByEmail(email);
+    const lowerCaseEmail = email.toLowerCase();
+    const user = await this.usersService.findByEmail(lowerCaseEmail); // Use lowercase email
     if (!user) return; // Don't reveal if user exists
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     const expires = new Date(Date.now() + 15 * 60 * 1000); // 15 min expiry
@@ -103,7 +105,7 @@ export class AuthService {
       { $set: { passwordResetToken: code, passwordResetExpires: expires } }
     );
     await this.mailerService.sendMail({
-      to: user.email,
+      to: user.email, // user.email is already lowercase from findByEmail
       subject: 'Your Nomadly Password Reset Code',
       template: './reset-code',
       context: { firstName: user.firstName, code },
@@ -111,17 +113,18 @@ export class AuthService {
   }
 
   async resetPasswordWithCode(email: string, code: string, newPassword: string): Promise<void> {
-    const user = await this.usersService.findByEmail(email);
+    const lowerCaseEmail = email.toLowerCase();
+    const user = await this.usersService.findByEmail(lowerCaseEmail); // Use lowercase email
     this.logger.log(`User: ${user?.email}, DB code: ${user?.passwordResetToken}, DB expires: ${user?.passwordResetExpires}, Provided code: ${code}`);
     if (!user || !user.passwordResetToken || !user.passwordResetExpires) {
-      this.logger.warn('User, code, or expiration missing for email: ' + email);
+      this.logger.warn('User, code, or expiration missing for email: ' + lowerCaseEmail);
       throw new BadRequestException('Invalid or expired code'); // Changed to BadRequestException
     }
     if (
       user.passwordResetToken !== code ||
       user.passwordResetExpires.getTime() < Date.now()
     ) {
-      this.logger.warn(`Code mismatch or expired for ${email}. Provided: ${code}, DB: ${user.passwordResetToken}, Expires: ${user.passwordResetExpires}, Now: ${new Date()}`);
+      this.logger.warn(`Code mismatch or expired for ${lowerCaseEmail}. Provided: ${code}, DB: ${user.passwordResetToken}, Expires: ${user.passwordResetExpires}, Now: ${new Date()}`);
       throw new BadRequestException('Invalid or expired code'); // Changed to BadRequestException
     }
     const hashed = await bcrypt.hash(newPassword, 10);
@@ -129,11 +132,12 @@ export class AuthService {
       { _id: user._id },
       { $set: { password: hashed }, $unset: { passwordResetToken: '', passwordResetExpires: '' } }
     );
-    this.logger.log(`Password successfully reset for user: ${email}`);
+    this.logger.log(`Password successfully reset for user: ${lowerCaseEmail}`);
   }
 
   async changePassword(email: string, oldPassword: string, newPassword: string): Promise<void> {
-    const user = await this.usersService.findByEmail(email);
+    const lowerCaseEmail = email.toLowerCase();
+    const user = await this.usersService.findByEmail(lowerCaseEmail); // Use lowercase email
     const isMatch = await bcrypt.compare(oldPassword, user.password);
     if (!isMatch) {
       throw new UnauthorizedException('Old password is incorrect');
@@ -155,12 +159,13 @@ export class AuthService {
       if (!user.email) {
         throw new Error('User email is missing, cannot send welcome email');
       }
+      const lowerCaseEmail = user.email.toLowerCase(); // Ensure email is lowercase
 
-      this.logger.log(`Attempting to send welcome email to ${user.email}...`);
+      this.logger.log(`Attempting to send welcome email to ${lowerCaseEmail}...`);
       this.logger.log(`Using template at ${join(process.cwd(), 'src/mail-templates/welcome.hbs')}`);
 
       const mailResult = await this.mailerService.sendMail({
-        to: user.email,
+        to: lowerCaseEmail, // Send to lowercase email
         subject: 'Welcome to Nomadly - Your Smart Travel Companion',
         template: './welcome',
         context: {
@@ -171,15 +176,15 @@ export class AuthService {
           'X-MSMail-Priority': 'High',
           'Importance': 'High',
           'X-Mailer': 'Nomadly Mailer',
-          'List-Unsubscribe': `<mailto:unsubscribe@nomadly.app?subject=Unsubscribe&body=${user.email}>`,
+          'List-Unsubscribe': `<mailto:unsubscribe@nomadly.app?subject=Unsubscribe&body=${lowerCaseEmail}>`, // Use lowercase email
         }
         // Removed unsupported attachDataUrls property
       });
 
-      this.logger.log(`Welcome email sent successfully to ${user.email}`);
+      this.logger.log(`Welcome email sent successfully to ${lowerCaseEmail}`);
       this.logger.log(`Mail response: ${JSON.stringify(mailResult)}`);
     } catch (error) {
-      this.logger.error(`Error sending welcome email to ${user.email || 'unknown user'}`);
+      this.logger.error(`Error sending welcome email to ${user.email?.toLowerCase() || 'unknown user'}`); // Log lowercase email on error
       this.logger.error(`Error details: ${error.message}`);
       this.logger.error(`Error stack: ${error.stack}`);
       throw error;

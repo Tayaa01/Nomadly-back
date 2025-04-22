@@ -12,7 +12,8 @@ export class UsersService {
   ) { }
 
   async create(createUserDto: CreateUserDto): Promise<Partial<User>> {
-    const existingUser = await this.userModel.findOne({ email: createUserDto.email }).exec();
+    const lowerCaseEmail = createUserDto.email.toLowerCase();
+    const existingUser = await this.userModel.findOne({ email: lowerCaseEmail }).exec();
     if (existingUser) {
       throw new ConflictException('Email already exists');
     }
@@ -21,6 +22,7 @@ export class UsersService {
     try {
       const createdUser = new this.userModel({
         ...createUserDto,
+        email: lowerCaseEmail, // Save email in lowercase
         password: hashedPassword,
       });
       const savedUser = await createdUser.save();
@@ -53,8 +55,9 @@ export class UsersService {
   }
 
   async findByEmail(email: string): Promise<UserDocument> {
+    const lowerCaseEmail = email.toLowerCase();
     const user = await this.userModel
-      .findOne({ email })
+      .findOne({ email: lowerCaseEmail }) // Find using lowercase email
       .select('+password +passwordResetToken +passwordResetExpires') // Include password reset fields
       .exec();
 
@@ -71,14 +74,16 @@ export class UsersService {
     }
 
     if (updateUserDto.email) {
+      const lowerCaseEmail = updateUserDto.email.toLowerCase();
       const existingUser = await this.userModel.findOne({
-        email: updateUserDto.email,
+        email: lowerCaseEmail, // Check using lowercase email
         _id: { $ne: id }
       }).exec();
 
       if (existingUser) {
         throw new ConflictException('Email already exists');
       }
+      updateUserDto.email = lowerCaseEmail; // Ensure email is updated in lowercase
     }
 
     if (updateUserDto.password) {
