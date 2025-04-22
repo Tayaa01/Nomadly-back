@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
+import { Injectable, UnauthorizedException, Logger, BadRequestException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { MailerService } from '@nestjs-modules/mailer';
 import { UsersService } from '../../users/users.service';
@@ -112,23 +112,24 @@ export class AuthService {
 
   async resetPasswordWithCode(email: string, code: string, newPassword: string): Promise<void> {
     const user = await this.usersService.findByEmail(email);
-    this.logger.log(`User: ${user.email}, DB code: ${user.passwordResetToken}, DB expires: ${user.passwordResetExpires}, Provided code: ${code}`);
+    this.logger.log(`User: ${user?.email}, DB code: ${user?.passwordResetToken}, DB expires: ${user?.passwordResetExpires}, Provided code: ${code}`);
     if (!user || !user.passwordResetToken || !user.passwordResetExpires) {
-      this.logger.warn('User, code, or expiration missing');
-      throw new Error('Invalid or expired code');
+      this.logger.warn('User, code, or expiration missing for email: ' + email);
+      throw new BadRequestException('Invalid or expired code'); // Changed to BadRequestException
     }
     if (
       user.passwordResetToken !== code ||
       user.passwordResetExpires.getTime() < Date.now()
     ) {
-      this.logger.warn(`Code mismatch or expired. Provided: ${code}, DB: ${user.passwordResetToken}, Expires: ${user.passwordResetExpires}, Now: ${new Date()}`);
-      throw new Error('Invalid or expired code');
+      this.logger.warn(`Code mismatch or expired for ${email}. Provided: ${code}, DB: ${user.passwordResetToken}, Expires: ${user.passwordResetExpires}, Now: ${new Date()}`);
+      throw new BadRequestException('Invalid or expired code'); // Changed to BadRequestException
     }
     const hashed = await bcrypt.hash(newPassword, 10);
     await this.userModel.updateOne(
       { _id: user._id },
       { $set: { password: hashed }, $unset: { passwordResetToken: '', passwordResetExpires: '' } }
     );
+    this.logger.log(`Password successfully reset for user: ${email}`);
   }
 
   async changePassword(email: string, oldPassword: string, newPassword: string): Promise<void> {

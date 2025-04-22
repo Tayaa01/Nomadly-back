@@ -1,5 +1,5 @@
 import { Controller, Post, Body, UseGuards, HttpCode, HttpStatus, Request, Patch } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBody, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBody, ApiBearerAuth, ApiProperty } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { AuthCredentialsDto } from './dto/auth-credentials.dto';
 import { CreateUserDto } from '../../users/dto/create-user.dto';
@@ -9,6 +9,29 @@ import { LoginResponse } from './interfaces/login-response.interface';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { VerifyJwtDto } from './dto/verify-jwt.dto';
+import { IsEmail, IsString, Length, MinLength } from 'class-validator';
+
+export class ResetPasswordRequestDto {
+  @ApiProperty({ example: 'user@example.com', description: 'Email to send reset code to' })
+  @IsEmail()
+  email: string;
+}
+
+export class ResetPasswordConfirmDto {
+  @ApiProperty({ example: 'user@example.com', description: 'User\'s email' })
+  @IsEmail()
+  email: string;
+
+  @ApiProperty({ example: '123456', description: '6-digit reset code' })
+  @IsString()
+  @Length(6, 6)
+  code: string;
+
+  @ApiProperty({ example: 'NewSecurePassword123!', description: 'New password' })
+  @IsString()
+  @MinLength(6)
+  newPassword: string;
+}
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -88,27 +111,42 @@ export class AuthController {
   }
 
   @Post('request-password-reset')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth('access-token')
-  @ApiOperation({ summary: 'Request password reset (send 6-digit code to email of logged-in user)' })
+  @ApiOperation({ summary: 'Request password reset (send 6-digit code to email)' })
   @ApiResponse({ status: 201, description: 'Reset code sent if email exists' })
-  async requestPasswordReset(@Request() req) {
-    const email = req.user.email;
-    await this.authService.sendPasswordResetCode(email);
+  @ApiBody({
+    type: ResetPasswordRequestDto,
+    examples: {
+      example1: {
+        summary: 'Request password reset',
+        value: { email: 'user@example.com' }
+      }
+    }
+  })
+  async requestPasswordReset(@Body() body: ResetPasswordRequestDto) {
+    await this.authService.sendPasswordResetCode(body.email);
     return { message: 'If this email exists, a reset code has been sent.' };
   }
 
   @Patch('reset-password')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth('access-token')
-  @ApiOperation({ summary: 'Reset password using 6-digit code (for logged-in user)' })
+  @ApiOperation({ summary: 'Reset password using 6-digit code and email' })
   @ApiResponse({ status: 200, description: 'Password reset successful' })
+  @ApiBody({
+    type: ResetPasswordConfirmDto,
+    examples: {
+      example1: {
+        summary: 'Reset password',
+        value: {
+          email: 'user@example.com',
+          code: '123456',
+          newPassword: 'YourNewPassword123!'
+        }
+      }
+    }
+  })
   async resetPassword(
-    @Request() req,
-    @Body() body: ResetPasswordDto
+    @Body() body: ResetPasswordConfirmDto
   ) {
-    const email = req.user.email;
-    await this.authService.resetPasswordWithCode(email, body.code, body.newPassword);
+    await this.authService.resetPasswordWithCode(body.email, body.code, body.newPassword);
     return { message: 'Password reset successful.' };
   }
 
