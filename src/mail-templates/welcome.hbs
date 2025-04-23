@@ -3,15 +3,24 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Welcome to Nomadly</title>
     <style>
         body {
-            background: #181818;
-            color: #E0E0E0;
-            font-family: 'SF Pro Display', 'Segoe UI', 'Roboto', Arial, sans-serif;
+            background-color: #181818;
+            font-family: Arial, sans-serif;
             margin: 0;
             padding: 0;
+            color: #E0E0E0;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: auto;
+            background-color: #101010;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid #232323;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
         }
 
         .hero {
@@ -22,7 +31,6 @@
 
         .overlay {
             background: rgba(0, 0, 0, 0.55);
-            width: 100%;
             height: 100%;
             display: flex;
             align-items: center;
@@ -31,230 +39,93 @@
 
         .overlay h1 {
             color: #fff;
-            font-size: 2rem;
-            font-weight: 700;
-            letter-spacing: 1px;
+            font-size: 24px;
             margin: 0;
-            text-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
-        }
-
-        .card {
-            background: #101010;
-            max-width: 600px;
-            /* Increased max-width for desktop */
-            margin: -60px auto 0 auto;
-            border-radius: 18px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
-            overflow: hidden;
-            border: 1px solid #232323;
-            padding: 0 0 32px 0;
-        }
-
-        .brand {
-            text-align: center;
-            padding: 32px 0 0 0;
-        }
-
-        .brand-logo {
-            font-size: 2.2rem;
-            font-weight: 700;
-            color: #4CD964;
-            letter-spacing: 2px;
-            margin-bottom: 4px;
-            display: block;
-        }
-
-        .brand-sub {
-            color: #fff;
-            font-size: 1.1rem;
-            font-weight: 500;
-            margin-bottom: 0;
-            letter-spacing: 1px;
-        }
-
-        .divider {
-            width: 60px;
-            height: 3px;
-            background: #4CD964;
-            margin: 24px auto 24px auto;
-            border-radius: 2px;
+            text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
         }
 
         .content {
-            padding: 0 32px;
-            text-align: left;
+            padding: 24px 32px;
         }
 
-        .content h2 {
+        .brand-logo {
+            font-size: 28px;
+            color: #4CD964;
+            font-weight: bold;
+            text-align: center;
+            margin-bottom: 4px;
+        }
+
+        .brand-sub {
+            text-align: center;
+            font-size: 16px;
+            margin-bottom: 24px;
             color: #fff;
-            font-size: 1.3rem;
-            font-weight: 700;
-            margin: 0 0 12px 0;
         }
 
-        .content p {
-            color: #E0E0E0;
-            font-size: 1rem;
-            margin: 0 0 18px 0;
-            line-height: 1.7;
+        h2 {
+            color: #fff;
+            font-size: 18px;
         }
 
-        .features {
-            margin: 24px 0 18px 0;
-            padding: 0;
+        p {
+            font-size: 15px;
+            line-height: 1.6;
+        }
+
+        ul {
+            padding-left: 0;
             list-style: none;
         }
 
-        .features li {
-            margin-bottom: 14px;
-            padding-left: 0;
+        li {
+            margin-bottom: 12px;
             color: #B0FFCB;
-            font-size: 1rem;
-            display: flex;
-            align-items: center;
-        }
-
-        .features .icon {
-            width: 28px;
-            height: 28px;
-            background: #4CD964;
-            border-radius: 50%;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            color: #000;
-            font-size: 1.1rem;
-            font-weight: bold;
-            margin-right: 12px;
-        }
-
-        .cta {
-            text-align: center;
-            margin: 32px 0 0 0;
-        }
-
-        .cta a {
-            background: #4CD964;
-            color: #000;
-            text-decoration: none;
-            font-weight: 700;
-            padding: 14px 36px;
-            border-radius: 8px;
-            font-size: 1rem;
-            letter-spacing: 1px;
-            transition: background 0.2s;
-            display: inline-block;
-        }
-
-        .cta a:hover {
-            background: #43c85a;
         }
 
         .footer {
-            background: #181818;
-            color: #888;
+            background-color: #181818;
             text-align: center;
-            font-size: 0.95rem;
-            padding: 24px 18px 18px 18px;
+            font-size: 13px;
+            color: #aaa;
+            padding: 20px;
             border-top: 1px solid #232323;
-            margin-top: 32px;
         }
 
-        .footer .social {
-            margin: 12px 0 8px 0;
-        }
-
-        .footer .social a {
+        .footer a {
             color: #4CD964;
-            margin: 0 8px;
             text-decoration: none;
-            font-weight: 500;
-        }
-
-        .footer p {
-            /* Added style for footer paragraphs */
-            margin: 5px 0;
-            line-height: 1.5;
-        }
-
-        @media (max-width: 640px) {
-
-            /* Adjusted breakpoint slightly */
-            .card {
-                margin: -40px auto 0 auto;
-                /* Keep negative margin for overlap */
-                max-width: 95%;
-                /* Use percentage width on smaller screens */
-                border-radius: 12px;
-                /* Slightly smaller radius */
-            }
-
-            .content {
-                padding: 0 5vw;
-                /* Use viewport width */
-            }
         }
     </style>
 </head>
 
 <body>
-    <!-- Hero Section (remains full width) -->
     <div class="hero">
         <div class="overlay">
             <h1>Welcome to your next journey</h1>
         </div>
     </div>
 
-    <!-- Centering Table Structure for Card -->
-    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%"
-        style="background-color: #181818;">
-        <tr>
-            <td align="center" style="padding: 0;">
-                <!-- Original Card Content -->
-                <div class="card">
-                    <div class="brand">
-                        <span class="brand-logo">Nomadly</span>
-                        <div class="brand-sub">Your Smart Travel Companion</div>
-                    </div>
-                    <div class="divider"></div>
-                    <div class="content">
-                        <h2>Hello, {{ firstName }}!</h2>
-                        <p>
-                            We're excited to have you join Nomadly.<br>
-                            Your new account unlocks a world of seamless travel.
-                        </p>
-                        <ul class="features">
-                            <li><span class="icon">🌍</span> Currency conversion, anywhere</li>
-                            <li><span class="icon">🧳</span> Effortless trip planning</li>
-                            <li><span class="icon">💡</span> Personalized travel deals</li>
-                        </ul>
-                        <div class="cta">
-                            <a href="https://nomadly.app/dashboard">Start Exploring</a>
-                        </div>
-                    </div>
-                    <div class="footer">
-                        <div class="social">
-                            <a href="https://facebook.com/nomadlyapp">Facebook</a>|
-                            <a href="https://twitter.com/nomadlyapp">Twitter</a>|
-                            <a href="https://instagram.com/nomadlyapp">Instagram</a>
-                        </div>
-                        <p>
-                            Need help? <a href="mailto:nomadly.app2025@gmail.com"
-                                style="color: #4CD964; text-decoration: none;">Contact support</a>
-                        </p>
-                        <p style="margin-top:10px;">
-                            &copy; 2025 Nomadly. All rights reserved.
-                        </p>
-                        <p>Nomadly | 123 Travel Lane, Wanderlust City, WL 98765</p>
-                        <!-- Added physical address placeholder -->
-                        <p>You received this email because you signed up for Nomadly.</p> <!-- Added context -->
-                    </div>
-                </div>
-                <!-- End Original Card Content -->
-            </td>
-        </tr>
-    </table>
-    <!-- End Centering Table Structure -->
+    <div class="container">
+        <div class="content">
+            <div class="brand-logo">Nomadly</div>
+            <div class="brand-sub">Your Smart Travel Companion</div>
+            <h2>Hello, {{ firstName }}!</h2>
+            <p>Thanks for joining Nomadly — we're excited to help you travel smarter.</p>
+            <p>Here’s what you get with your new account:</p>
+            <ul>
+                <li>🌍 Currency conversion, anywhere</li>
+                <li>🧳 Effortless trip planning</li>
+                <li>💡 Personalized travel deals</li>
+            </ul>
+            <p>We're here for any questions or feedback — just hit reply or contact us below.</p>
+        </div>
+        <div class="footer">
+            <p>Contact us: <a href="mailto:support@nomadly.app">support@nomadly.app</a></p>
+            <p>Nomadly · 123 Travel Lane · Wanderlust City · WL 98765</p>
+            <p>You’re receiving this email because you signed up at Nomadly.</p>
+        </div>
+    </div>
 </body>
 
 </html>
