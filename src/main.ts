@@ -45,8 +45,9 @@ async function bootstrap() {
   app.setGlobalPrefix('api');
 
   // Configure CORS as requested
+  const corsOrigins = process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',') : [];
   app.enableCors({
-    origin: ['http://localhost:4200', 'http://espritmobile.com'],
+    origin: corsOrigins,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With'],
     credentials: true,
@@ -94,9 +95,9 @@ async function bootstrap() {
     customSiteTitle: 'Nomadly API Documentation',
   });
 
-  const port = 3000;
+  const port = parseInt(process.env.PORT, 10) || 3000; // Read port from environment variable
   await app.listen(port, '0.0.0.0');
-  
+
   console.log(`Application is running on: ${await app.getUrl()}`);
   console.log(`API is available at: http://localhost:${port}/api`);
   console.log(`Swagger is available at: http://localhost:${port}/api-docs`);

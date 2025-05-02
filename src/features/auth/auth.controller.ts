@@ -1,4 +1,5 @@
-import { Controller, Post, Body, UseGuards, HttpCode, HttpStatus, Request, Patch } from '@nestjs/common';
+import { Controller, Post, Body, UseGuards, HttpCode, HttpStatus, Request, Patch, Get, Req, Res, Logger } from '@nestjs/common'; // Added Res and Logger
+import { Response } from 'express'; // Added Response from express
 import { ApiTags, ApiOperation, ApiResponse, ApiBody, ApiBearerAuth, ApiProperty } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { AuthCredentialsDto } from './dto/auth-credentials.dto';
@@ -10,6 +11,9 @@ import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { VerifyJwtDto } from './dto/verify-jwt.dto';
 import { IsEmail, IsString, Length, MinLength } from 'class-validator';
+import { AuthGuard } from '@nestjs/passport';
+import { GoogleTokenDto } from './dto/google-token.dto'; // Import the new DTO
+import { LoginResponseDto } from './dto/login-response.dto'; // Import the new DTO
 
 export class ResetPasswordRequestDto {
   @ApiProperty({ example: 'user@example.com', description: 'Email to send reset code to' })
@@ -36,6 +40,8 @@ export class ResetPasswordConfirmDto {
 @ApiTags('Auth')
 @Controller('auth')
 export class AuthController {
+  private readonly logger = new Logger(AuthController.name); // Initialize logger
+
   constructor(private readonly authService: AuthService) { }
 
   @Post('login')
@@ -172,6 +178,71 @@ export class AuthController {
       return { valid: true, payload: decoded };
     } catch (e) {
       return { valid: false, error: e.message };
+    }
+  }
+
+  @Get('google')
+  @UseGuards(AuthGuard('google'))
+  @ApiOperation({ summary: 'Initiate Google OAuth login' })
+  async googleAuth(@Req() req) {
+    // Initiates the Google OAuth flow
+    // Passport redirects the user to Google's login page
+  }
+
+  @Get('google/callback')
+  @UseGuards(AuthGuard('google'))
+  @ApiOperation({ summary: 'Handle Google OAuth callback and redirect to app' })
+  @ApiResponse({ status: HttpStatus.FOUND, description: 'Redirects to custom app scheme with token and user data.' })
+  async googleAuthRedirect(@Req() req, @Res() res: Response) {
+    try {
+      // Process the user login/creation and get the response
+      const loginResponse: LoginResponse = await this.authService.findOrCreateGoogleUser(req.user);
+
+      // Construct the original custom scheme URL with token and user data
+      const { access_token, user } = loginResponse;
+      const userJson = JSON.stringify(user);
+      // Encode the user JSON to make it URL-safe
+      const redirectUrl = `nomadlyapp://callback?access_token=${access_token}&user=${encodeURIComponent(userJson)}`;
+
+      // Log the exact URL we are redirecting to
+      this.logger.log(`Attempting redirect to custom scheme: ${redirectUrl}`);
+
+      // Send the redirect response
+      res.redirect(HttpStatus.FOUND, redirectUrl);
+
+    } catch (error) {
+      // Log any errors during the findOrCreate or redirect process
+      this.logger.error(`Error during Google callback processing or redirect: ${error.message}`, error.stack);
+      // Optionally redirect to an error URL in the app or send an error response
+      if (!res.headersSent) {
+        res.status(HttpStatus.INTERNAL_SERVER_ERROR).send('Failed to process Google login.');
+      }
+    }
+  }
+
+  @Post('google/tokens')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Authenticate via Google ID/Access Tokens' })
+  @ApiBody({ type: GoogleTokenDto })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'User authenticated successfully via Google tokens, returns JWT token and user info',
+    type: LoginResponseDto, // Use the DTO class here
+  })
+  @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: 'Invalid Google token or failed verification' })
+  async googleTokenLogin(@Body() googleTokenDto: GoogleTokenDto): Promise<LoginResponse> {
+    try {
+      this.logger.log(`Received Google tokens for verification. ID Token starts with: ${googleTokenDto.id_token.substring(0, 10)}...`);
+      // Pass the ID token to the service method for verification and login
+      const loginResponse = await this.authService.verifyGoogleTokenAndLogin(googleTokenDto.id_token);
+      // Log the successful response before returning
+      this.logger.log(`Google Token Login successful. Response: ${JSON.stringify(loginResponse)}`);
+      return loginResponse;
+    } catch (error) {
+      // Log errors specifically from this endpoint
+      this.logger.error(`Error during googleTokenLogin: ${error.message}`, error.stack);
+      // Re-throw the error to let NestJS handle the response status (e.g., 401 Unauthorized)
+      throw error;
     }
   }
 }

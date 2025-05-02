@@ -1,7 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
 
-@Schema({ 
+@Schema({
   timestamps: true,
   toJSON: {
     transform: (_, ret) => {
@@ -23,14 +23,14 @@ export class User {
   @Prop({ required: true, unique: true })
   email: string;
 
-  @Prop({ required: true, select: false })
-  password: string;
+  @Prop({ type: String, required: false }) // Make password optional
+  password?: string;
 
   @Prop({ default: 'user' })
   role: string;
 
-  @Prop({ required: true, minlength: 2, maxlength: 3 })
-  countryCode: string;
+  @Prop({ maxlength: 3, required: false }) // Make optional, remove minlength
+  countryCode?: string;
 
   @Prop({ default: 'USD' }) // Add currency field with a default value
   currency: string;
@@ -55,6 +55,12 @@ export class User {
 
   @Prop()
   lastLogin?: Date;
+
+  @Prop({ type: String, index: true, sparse: true, unique: true, required: false }) // Add googleId field
+  googleId?: string;
+
+  @Prop({ default: 'local' }) // Add authProvider field (optional but recommended)
+  authProvider?: 'local' | 'google';
 }
 
 export type UserDocument = User & Document;

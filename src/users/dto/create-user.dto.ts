@@ -1,12 +1,14 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { 
-  IsEmail, 
-  IsNotEmpty, 
-  IsString, 
-  MinLength, 
-  MaxLength, 
+import {
+  IsEmail,
+  IsNotEmpty,
+  IsString,
+  MinLength,
+  MaxLength,
   Matches,
-  IsUppercase
+  IsUppercase,
+  IsOptional,
+  IsBoolean
 } from 'class-validator';
 
 export class CreateUserDto {
@@ -32,20 +34,22 @@ export class CreateUserDto {
   @MaxLength(255)
   email: string;
 
-  @ApiProperty({ 
+  @ApiProperty({
     example: 'Password123!',
-    description: 'Password must contain at least 8 characters, including uppercase, lowercase, number and special character'
+    description: 'Password required for local registration. Not needed for Google OAuth.',
+    required: false
   })
+  @IsOptional()
   @IsString()
   @MinLength(8)
   @MaxLength(32)
   @Matches(
     /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*(),.?":{}|<>+\-_])[A-Za-z\d!@#$%^&*(),.?":{}|<>+\-_]{8,}$/,
-    { 
+    {
       message: 'Password must contain at least one lowercase letter, one uppercase letter, one number, and one special character'
     }
   )
-  password: string;
+  password?: string;
 
   @ApiProperty({ example: 'US' })
   @IsString()
@@ -61,4 +65,9 @@ export class CreateUserDto {
   @ApiProperty({ example: 'USD', description: 'Currency of the user (automatically set based on country code)' })
   @IsString()
   currency?: string; // Make this optional since it will be set automatically
+
+  @ApiProperty({ description: 'Indicates if the user\'s email has been verified', example: false, required: false })
+  @IsOptional()
+  @IsBoolean()
+  isEmailVerified?: boolean;
 }

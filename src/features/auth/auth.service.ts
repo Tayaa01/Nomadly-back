@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, Logger, BadRequestException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, Logger, BadRequestException, ConflictException, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { MailerService } from '@nestjs-modules/mailer';
 import { UsersService } from '../../users/users.service';
@@ -10,17 +10,26 @@ import { join } from 'path';
 import * as crypto from 'crypto';
 import { Model } from 'mongoose';
 import { InjectModel } from '@nestjs/mongoose';
+import { ConfigService } from '@nestjs/config'; // Import ConfigService
+import { OAuth2Client, TokenPayload } from 'google-auth-library'; // Import OAuth2Client and TokenPayload
 
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name); // Initialize logger
+  private googleClient: OAuth2Client; // Add Google Client instance
 
   constructor(
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
     private readonly mailerService: MailerService, // Inject MailerService
     @InjectModel(User.name) private userModel: Model<UserDocument>,
-  ) { }
+    private readonly configService: ConfigService, // Inject ConfigService
+  ) {
+    // Initialize Google Client
+    this.googleClient = new OAuth2Client(
+      this.configService.get<string>('GOOGLE_CLIENT_ID'),
+    );
+  }
 
   async validateUser(email: string, password: string): Promise<any> {
     try {
@@ -151,6 +160,193 @@ export class AuthService {
 
   verifyJwt(token: string): any {
     return this.jwtService.verify(token);
+  }
+
+  async findOrCreateGoogleUser(googleUser: any): Promise<LoginResponse> {
+    const lowerCaseEmail = googleUser.email.toLowerCase();
+    let user: UserDocument | null = null; // Initialize user as potentially null
+
+    try {
+      user = await this.usersService.findByEmail(lowerCaseEmail);
+      this.logger.log(`Existing user logging in via Google OAuth: ${lowerCaseEmail}`);
+      // Optionally update user details (e.g., name) from Google profile if needed
+      // await this.usersService.update(user.id, { firstName: googleUser.firstName, lastName: googleUser.lastName });
+
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        // User doesn't exist, create a new one
+        this.logger.log(`User not found, creating new user from Google OAuth: ${lowerCaseEmail}`);
+        try {
+          const newUserDto = {
+            email: lowerCaseEmail,
+            firstName: googleUser.firstName,
+            lastName: googleUser.lastName,
+            isEmailVerified: true, // Email is verified by Google
+            authProvider: 'google', // Mark as Google user
+            // countryCode: 'US', // Set default or handle differently
+            // currency: 'USD', // Set default or handle differently
+          };
+          user = await this.usersService.createGoogleUser(newUserDto);
+          await this.sendWelcomeEmail(user); // Send welcome email
+        } catch (creationError) {
+          if (creationError instanceof ConflictException) {
+            this.logger.error(`Conflict creating Google user, email might exist despite initial check: ${lowerCaseEmail}`, creationError.stack);
+            throw creationError; // Re-throw conflict exception
+          }
+          this.logger.error(`Error creating user from Google OAuth: ${lowerCaseEmail}`, creationError.stack);
+          throw new InternalServerErrorException('Could not create user from Google data.');
+        }
+      } else {
+        // Handle other potential errors from findByEmail
+        this.logger.error(`Error finding user by email during Google Auth: ${lowerCaseEmail}`, error.stack);
+        throw error;
+      }
+    }
+
+    // Ensure user is not null before proceeding
+    if (!user) {
+      this.logger.error(`User object is null after findOrCreateGoogleUser for email: ${lowerCaseEmail}`);
+      throw new InternalServerErrorException('Failed to retrieve or create user.');
+    }
+
+    // Prepare user data for login
+    const userForLogin = {
+      _id: user._id,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      countryCode: user.countryCode, // Make sure this exists on the user object
+      role: user.role,
+    };
+
+    return this.login(userForLogin);
+  }
+
+  async verifyGoogleTokenAndLogin(idToken: string): Promise<LoginResponse> {
+    let payload: TokenPayload | undefined;
+    try {
+      const ticket = await this.googleClient.verifyIdToken({
+        idToken: idToken,
+        audience: this.configService.get<string>('GOOGLE_CLIENT_ID'), // Specify the CLIENT_ID of the app that accesses the backend
+      });
+      payload = ticket.getPayload();
+
+      if (!payload) {
+        this.logger.error('Google ID token verification failed: No payload');
+        throw new UnauthorizedException('Invalid Google token');
+      }
+
+      if (!payload.email || !payload.email_verified) {
+        this.logger.error('Google ID token verification failed: Email missing or not verified');
+        throw new UnauthorizedException('Google account email not verified or missing');
+      }
+
+      this.logger.log(`Google ID token verified for email: ${payload.email}`);
+
+      // Prepare user data from token payload
+      const googleUserData: {
+        googleId: string;
+        email: string;
+        firstName: string;
+        lastName: string;
+        isEmailVerified: boolean;
+        authProvider: 'google';
+      } = {
+        googleId: payload.sub, // Google's unique ID for the user
+        email: payload.email.toLowerCase(),
+        firstName: payload.given_name || payload.email.split('@')[0], // Fallback if missing
+        lastName: payload.family_name || '.', // Fallback if missing
+        isEmailVerified: true, // Already checked payload.email_verified
+        authProvider: 'google',
+      };
+
+      // Find or create user based on extracted data
+      const user = await this.findOrCreateUserFromGoogleData(googleUserData);
+
+      // Login the user and return JWT
+      // Ensure the user object passed to login has the necessary fields
+      const userForLogin = {
+        _id: user._id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        countryCode: user.countryCode, // Make sure this exists on the user object
+        role: user.role,
+      };
+      return this.login(userForLogin);
+
+    } catch (error) {
+      this.logger.error(`Google ID token verification or login failed: ${error.message}`, error.stack);
+      if (error instanceof UnauthorizedException) {
+        throw error;
+      }
+      throw new UnauthorizedException('Failed to authenticate with Google token');
+    }
+  }
+
+  private async findOrCreateUserFromGoogleData(googleUserData: {
+    googleId: string;
+    email: string;
+    firstName: string;
+    lastName: string;
+    isEmailVerified: boolean;
+    authProvider: 'google';
+  }): Promise<UserDocument> {
+    let user: UserDocument | null = null;
+
+    try {
+      user = await this.usersService.findByEmail(googleUserData.email);
+      this.logger.log(`Existing user logging in via Google Token: ${googleUserData.email}`);
+      // Optionally update user details (e.g., name, googleId) if they logged in differently before
+      if (!user.googleId) {
+        await this.userModel.updateOne({ _id: user._id }, { $set: { googleId: googleUserData.googleId, authProvider: 'google' } });
+        user.googleId = googleUserData.googleId; // Update in-memory object
+        user.authProvider = 'google';
+      }
+
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        // User doesn't exist, create a new one
+        this.logger.log(`User not found, creating new user from Google Token: ${googleUserData.email}`);
+        try {
+          // Prepare DTO for user creation
+          const newUserDto: Partial<CreateUserDto> & {
+            googleId?: string;
+            authProvider?: 'google';
+            isEmailVerified?: boolean;
+            countryCode?: string | null; // Allow null for countryCode
+          } = {
+            email: googleUserData.email,
+            firstName: googleUserData.firstName,
+            lastName: googleUserData.lastName,
+            isEmailVerified: googleUserData.isEmailVerified,
+            googleId: googleUserData.googleId,
+            authProvider: googleUserData.authProvider,
+            countryCode: null, // Explicitly set countryCode to null for new Google users
+          };
+          user = await this.usersService.createGoogleUser(newUserDto);
+          await this.sendWelcomeEmail(user); // Send welcome email
+        } catch (creationError) {
+          if (creationError instanceof ConflictException) {
+            this.logger.error(`Conflict creating Google user via token, email might exist despite initial check: ${googleUserData.email}`, creationError.stack);
+            throw creationError;
+          }
+          this.logger.error(`Error creating user from Google Token: ${googleUserData.email}`, creationError.stack);
+          throw new InternalServerErrorException('Could not create user from Google data.');
+        }
+      } else {
+        // Handle other potential errors from findByEmail
+        this.logger.error(`Error finding user by email during Google Token Auth: ${googleUserData.email}`, error.stack);
+        throw error;
+      }
+    }
+
+    if (!user) {
+      this.logger.error(`User object is null after findOrCreateUserFromGoogleData for email: ${googleUserData.email}`);
+      throw new InternalServerErrorException('Failed to retrieve or create user.');
+    }
+
+    return user;
   }
 
   private async sendWelcomeEmail(user: Partial<User>): Promise<void> {

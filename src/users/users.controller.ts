@@ -1,16 +1,18 @@
-import { 
-  Controller, 
-  Get, 
-  Post, 
-  Put, 
-  Delete, 
-  Body, 
-  Param, 
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Body,
+  Param,
   UseGuards,
   Request,
   HttpCode,
   HttpStatus,
-  ForbiddenException
+  ForbiddenException,
+  Logger,
+  InternalServerErrorException
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
 import { UsersService } from './users.service';
@@ -24,7 +26,9 @@ import { JwtAuthGuard } from '../features/auth/guards/jwt-auth.guard';
 @Controller('users')
 @ApiBearerAuth('access-token')
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  private readonly logger = new Logger(UsersController.name);
+
+  constructor(private readonly usersService: UsersService) { }
 
   @Post()
   @ApiOperation({ summary: 'Create a new user' })
@@ -40,17 +44,32 @@ export class UsersController {
   @ApiOperation({ summary: 'Get current user profile' })
   @ApiResponse({ status: HttpStatus.OK, description: 'Returns the current user profile' })
   async getCurrentUser(@Request() req): Promise<Partial<User>> {
-    return this.usersService.findById(req.user.id);
+    const userId = req.user?.id;
+    this.logger.log(`Fetching profile for user ID: ${userId}`);
+
+    if (!userId) {
+      this.logger.error('User ID not found in request after JWT validation.');
+      throw new InternalServerErrorException('User information not available.');
+    }
+
+    try {
+      const userProfile = await this.usersService.findById(userId);
+      this.logger.log(`Returning profile data for user ID ${userId}: ${JSON.stringify(userProfile)}`);
+      return userProfile;
+    } catch (error) {
+      this.logger.error(`Error fetching profile for user ID ${userId}: ${error.message}`, error.stack);
+      throw new InternalServerErrorException('Failed to retrieve user profile.');
+    }
   }
 
   @Put('me')
   @UseGuards(JwtAuthGuard)
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Update current user profile',
     description: 'Update user profile information excluding password and role'
   })
   @ApiResponse({ status: HttpStatus.OK, description: 'Profile updated successfully' })
-  @ApiBody({ 
+  @ApiBody({
     type: UpdateProfileDto,
     description: 'User profile fields to update',
     examples: {
@@ -75,24 +94,24 @@ export class UsersController {
       const nameParts = currentName.split(' ');
       const currentFirstName = nameParts[0] || '';
       const currentLastName = nameParts.slice(1).join(' ') || '';
-      
+
       // Use provided values or defaults from current name
       const firstName = updateProfileDto.firstName || currentFirstName;
       const lastName = updateProfileDto.lastName || currentLastName;
-      
+
       // Create the update object with the new name
       const updateData = {
         ...updateProfileDto,
         name: `${firstName} ${lastName}`.trim()
       };
-      
+
       // Remove firstName and lastName as they're not in our schema
       delete updateData.firstName;
       delete updateData.lastName;
-      
+
       return this.usersService.update(req.user.id, updateData);
     }
-    
+
     // If no name fields were provided, just update with the raw data
     return this.usersService.update(req.user.id, updateProfileDto);
   }
@@ -129,7 +148,7 @@ export class UsersController {
     if (id !== req.user.id && req.user.role !== 'admin') {
       throw new ForbiddenException('You can only update your own profile');
     }
-    
+
     return this.usersService.update(id, updateUserDto);
   }
 
@@ -144,7 +163,7 @@ export class UsersController {
     if (id !== req.user.id && req.user.role !== 'admin') {
       throw new ForbiddenException('You can only delete your own account');
     }
-    
+
     return this.usersService.delete(id);
   }
 

@@ -1,9 +1,9 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsEmail, IsOptional, IsString, Length } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsEmail, IsOptional, IsString, Length, IsUppercase } from 'class-validator';
 
 export class UpdateProfileDto {
-  @ApiProperty({ 
-    description: 'User\'s first name', 
+  @ApiProperty({
+    description: 'User\'s first name',
     example: 'Tayaa',
     required: false
   })
@@ -11,8 +11,8 @@ export class UpdateProfileDto {
   @IsString()
   firstName?: string;
 
-  @ApiProperty({ 
-    description: 'User\'s last name', 
+  @ApiProperty({
+    description: 'User\'s last name',
     example: 'Doe',
     required: false
   })
@@ -20,8 +20,8 @@ export class UpdateProfileDto {
   @IsString()
   lastName?: string;
 
-  @ApiProperty({ 
-    description: 'User\'s email address', 
+  @ApiProperty({
+    description: 'User\'s email address',
     example: 'tayaa@gmail.com',
     required: false
   })
@@ -29,8 +29,8 @@ export class UpdateProfileDto {
   @IsEmail()
   email?: string;
 
-  @ApiProperty({ 
-    description: 'User\'s country code', 
+  @ApiProperty({
+    description: 'User\'s country code',
     example: 'TN',
     required: false
   })
@@ -38,4 +38,14 @@ export class UpdateProfileDto {
   @IsString()
   @Length(2, 3)
   countryCode?: string;
+
+  @ApiPropertyOptional({
+    example: 'USD',
+    description: 'User\'s preferred currency code (ISO 4217)'
+  })
+  @IsOptional()
+  @IsString()
+  @IsUppercase()
+  @Length(3, 3, { message: 'Currency code must be 3 uppercase letters (ISO 4217)' })
+  currency?: string;
 }

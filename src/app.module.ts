@@ -36,6 +36,7 @@ import { MailTestController } from './mail-test.controller';
         MAIL_USER: Joi.string().required(),
         MAIL_PASSWORD: Joi.string().required(),
         MAIL_FROM: Joi.string().required(),
+        CORS_ORIGINS: Joi.string().optional().default(''), // Add validation for CORS_ORIGINS
       }),
     }),
     MongooseModule.forRootAsync({

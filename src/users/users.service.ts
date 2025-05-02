@@ -1,4 +1,4 @@
-import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
+import { Injectable, ConflictException, NotFoundException, InternalServerErrorException, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -29,6 +29,49 @@ export class UsersService {
       return savedUser.toJSON();
     } catch (error) {
       throw new ConflictException('Error creating user');
+    }
+  }
+
+  async createGoogleUser(googleUserDto: Partial<CreateUserDto> & { countryCode?: string | null }): Promise<UserDocument> {
+    const lowerCaseEmail = googleUserDto.email.toLowerCase();
+    const existingUser = await this.userModel.findOne({ email: lowerCaseEmail }).exec();
+    if (existingUser) {
+      // This case should ideally be handled in AuthService, but double-check here
+      throw new ConflictException('Email already exists');
+    }
+
+    // Ensure required fields have default values if not provided by Google profile
+    const userToCreate = {
+      ...googleUserDto,
+      email: lowerCaseEmail,
+      firstName: googleUserDto.firstName || 'User', // Default if missing
+      lastName: googleUserDto.lastName || '.', // Default if missing (schema requires it)
+      isEmailVerified: true, // Assume Google email is verified
+      authProvider: 'google', // Explicitly set authProvider
+    };
+
+    // Explicitly check required fields before saving
+    if (!userToCreate.firstName || !userToCreate.lastName || !userToCreate.email) {
+      console.error('Validation Error: Missing required fields before save attempt', userToCreate);
+      throw new InternalServerErrorException('Missing required user information from Google profile.');
+    }
+
+    try {
+      // Create user with the prepared data
+      const createdUser = new this.userModel(userToCreate); // Use userToCreate which includes the default
+      const savedUser = await createdUser.save();
+      return savedUser;
+    } catch (error) {
+      // Log the detailed error
+      console.error('Error creating Google user in DB:', error);
+      // Check for specific Mongoose validation errors if needed
+      if (error.name === 'ValidationError') {
+        console.error('Validation Errors:', error.errors);
+        // Provide a more specific error message to the client
+        throw new BadRequestException(`User validation failed: ${error._message}`);
+      }
+      // Fallback for other types of errors
+      throw new InternalServerErrorException('Error creating user from Google data');
     }
   }
 
