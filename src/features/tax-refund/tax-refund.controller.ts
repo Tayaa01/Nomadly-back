@@ -23,7 +23,7 @@ export class TaxRefundController {
     private readonly taxRefundService: TaxRefundService,
     private readonly transactionsService: TransactionsService,
     private readonly savingsService: SavingsService
-  ) {}
+  ) { }
 
   @Post('analyze')
   @ApiOperation({
@@ -142,12 +142,20 @@ export class TaxRefundController {
       }
     };
 
-    // Generate descriptions using the category and items (for internal use only)
-    const purchaseContext = `Purchase of ${analysis.amount} ${sourceCountryData.currency} in ${country}`;
-    const descriptions = await this.geminiService.generateDescriptions(purchaseContext, {
-      category: analysis.category,
-      items: itemsForDescription
-    });
+    let descriptions: { purchaseDescription: string; refundDescription: string };
+
+    if (analysis.description && analysis.description.trim() !== '') {
+      console.log(`Using purchase description from image analysis: "${analysis.description}"`);
+      descriptions = {
+        purchaseDescription: analysis.description,
+        refundDescription: `Tax refund for purchase in ${sourceCountryData.name}` // Generic refund description
+      };
+    } else {
+      console.log('Image analysis did not provide a sufficient purchase description. Calling generateDescriptions.');
+      const purchaseContext = `Purchase of ${analysis.amount} ${sourceCountryData.currency} in ${country}`;
+      // Pass the full 'analysis' object, as generateDescriptions can use its fields for fallbacks
+      descriptions = await this.geminiService.generateDescriptions(purchaseContext, analysis);
+    }
 
     // Handle currency conversion if target country is different from source country
     if (targetCountryData && sourceCountryData.currency !== targetCountryData.currency) {
@@ -157,7 +165,7 @@ export class TaxRefundController {
           targetCountryData.currency,
           analysis.amount
         );
-        
+
         response.bill.convertedAmount = {
           value: Math.round(convertedAmount.result * 100) / 100,
           currency: targetCountryData.currency,
@@ -172,16 +180,15 @@ export class TaxRefundController {
 
     // Special handling for US tax-free shopping
     if (country.toUpperCase() === 'US') {
-      response.taxRefund = {
-        available: false,
-        message: 'The United States does not have a VAT refund system.'
-      };
-      return response;
+      // Set the taxRefund part of the response for US, but don't return yet
+      // The transaction saving logic needs to run.
+      // The taxInfo object will be correctly populated by taxRefundService for US.
+      console.log('Handling US-specific tax response details.');
     }
 
     // Handle tax refund analysis
     const taxInfo = await this.taxRefundService.analyzeTaxRefund(analysis.amount, country);
-    
+
     if (!taxInfo.eligible) {
       response.taxRefund = {
         available: false,
@@ -202,7 +209,7 @@ export class TaxRefundController {
       }
     } else {
       const refundAmount = Math.round(taxInfo.potentialRefund * 100) / 100;
-      
+
       response.taxRefund = {
         available: true,
         amount: {
@@ -217,16 +224,16 @@ export class TaxRefundController {
           'Items must be unused and in original packaging'
         ]
       };
-      
+
       // Track this potential refund in user's savings
       const updatedSavings = await this.savingsService.addPotentialRefund(
-        req.user.id, 
-        refundAmount, 
-        sourceCountryData.currency, 
+        req.user.id,
+        refundAmount,
+        sourceCountryData.currency,
         country,
         analysis.category
       );
-      
+
       // Add savings info to the response
       response.savings = {
         potentialRefunds: updatedSavings.potentialRefunds,
@@ -235,34 +242,34 @@ export class TaxRefundController {
       };
     }
 
-    // Save transaction
-    if (taxInfo.eligible) {
-      const transactionData = {
-        userId: new Types.ObjectId(req.user.id), // Convert userId to ObjectId
-        originalAmount: analysis.amount,
-        originalCurrency: sourceCountryData.currency,
-        convertedAmount: response.bill.convertedAmount?.value || analysis.amount,
-        convertedCurrency: targetCountryData?.currency || sourceCountryData.currency,
-        description: descriptions.purchaseDescription || 'Shopping in ' + country,
-        taxRefundAmount: taxInfo.potentialRefund,
-        taxRefundDescription: descriptions.refundDescription || `Tax refund from ${country}`,
-        country: country,
-        hasTaxRefund: true,
-        scanDate: new Date()
-      };
+    // Save transaction regardless of tax refund eligibility
+    const transactionData = {
+      userId: new Types.ObjectId(req.user.id), // Convert userId to ObjectId
+      originalAmount: analysis.amount,
+      originalCurrency: sourceCountryData.currency,
+      convertedAmount: response.bill.convertedAmount?.value || analysis.amount,
+      convertedCurrency: targetCountryData?.currency || sourceCountryData.currency,
+      description: descriptions.purchaseDescription || 'Shopping in ' + country,
+      taxRefundAmount: taxInfo.eligible ? taxInfo.potentialRefund : 0,
+      taxRefundDescription: taxInfo.eligible ? (descriptions.refundDescription || `Tax refund from ${country}`) : 'No tax refund eligible',
+      country: country,
+      hasTaxRefund: taxInfo.eligible,
+      scanDate: new Date(),
+      category: analysis.category || 'General', // Add category to transaction
+      items: analysis.items || [], // Add items to transaction
+    };
 
-      console.log('Saving transaction:', transactionData);
+    console.log('Saving transaction:', transactionData);
 
-      try {
-        await this.transactionsService.create(transactionData); // Do not include createdAt
-        console.log('Transaction saved successfully.');
-      } catch (error) {
-        console.error('Error saving transaction:', error);
-      }
+    try {
+      await this.transactionsService.create(transactionData); // Do not include createdAt
+      console.log('Transaction saved successfully.');
+    } catch (error) {
+      console.error('Error saving transaction:', error);
     }
 
     // Add descriptive details to the response
-    response.bill.description = analysis.description || descriptions.purchaseDescription;
+    response.bill.description = descriptions.purchaseDescription; // Use the determined purchase description
 
     // Add this to the response so client knows which country code was used
     response.user = {

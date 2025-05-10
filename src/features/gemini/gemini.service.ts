@@ -28,11 +28,11 @@ export class GeminiService {
     try {
       const result = await this.model.generateContent(prompt);
       const response = await result.response;
-      
+
       if (!response || !response.text) {
         throw new Error('Invalid response from Gemini API');
       }
-      
+
       return response.text();
     } catch (error) {
       console.error('Error generating response:', error);
@@ -47,7 +47,7 @@ export class GeminiService {
       }
 
       const prompt = "Analyze this image and extract the total amount and currency if present. Return the result in JSON format with 'amount' and 'currency' fields. If no currency symbol is visible, set currency as null.";
-      
+
       const imageParts = [{
         inlineData: {
           data: imageBuffer.toString('base64'),
@@ -57,7 +57,7 @@ export class GeminiService {
 
       const result = await this.visionModel.generateContent([prompt, ...imageParts]);
       const response = await result.response;
-      
+
       if (!response) {
         throw new Error('No response from Gemini API');
       }
@@ -74,10 +74,10 @@ export class GeminiService {
       } catch (parseError) {
         const numberMatch = text.match(/\d+([.,]\d+)?/);
         const amount = numberMatch ? parseFloat(numberMatch[0].replace(',', '.')) : 0;
-        
+
         const currencyMatch = text.match(/[$€£¥]/);
         const currency = currencyMatch ? this.currencySymbolMap[currencyMatch[0]] : null;
-        
+
         return { amount, currency };
       }
     } catch (error) {
@@ -121,7 +121,7 @@ export class GeminiService {
         {"amount": 86.50, "currency": "EUR", "category": "restaurant", "items": ["dinner", "wine"], "description": "Dinner with wine"}
         {"amount": 125.00, "currency": "EUR", "category": "clothing", "items": ["jeans", "shirt"], "description": "Clothing purchase"}
         {"amount": 42.30, "currency": "EUR", "category": "pharmacy", "items": ["medicine"], "description": "Medicine and toiletries"}`;
-      
+
       const imageParts = [{
         inlineData: {
           data: imageBuffer.toString('base64'),
@@ -131,7 +131,7 @@ export class GeminiService {
 
       const result = await this.visionModel.generateContent([prompt, ...imageParts]);
       const response = await result.response;
-      
+
       if (!response) {
         throw new Error('No response from Gemini API');
       }
@@ -170,60 +170,42 @@ export class GeminiService {
     purchaseDescription: string;
     refundDescription: string;
   }> {
-    // Modified to use category instead of establishment name
-    const category = imageAnalysis?.category ? 
-                     `for ${imageAnalysis.category}` : '';
-    const items = imageAnalysis?.items?.length > 0 ? 
-                 `including ${imageAnalysis.items.join(', ')}` : '';
-                 
-    const prompt = `As a shopping assistant, describe this purchase:
-    
-    "${context} ${category} ${items}"
-    
-    Provide:
-    
-    1. purchaseDescription: A simple 3-5 word description focusing on the type of purchase (restaurant, supermarket, etc.) and main items, NOT specific store names.
-    2. refundDescription: A brief tax refund description (max 5 words).
-    
-    Format as JSON with 'purchaseDescription' and 'refundDescription' fields only.`;
-
     try {
-      const result = await this.model.generateContent(prompt);
+      const result = await this.model.generateContent(context);
       const response = await result.response;
-      const responseText = response.text();
-      console.log("Description generation response:", responseText);
-      
-      // Strip Markdown code blocks if present
-      const cleanedText = this.stripMarkdownCodeBlocks(responseText);
-      console.log("Cleaned response:", cleanedText);
-      
-      try {
-        // Try to parse the JSON response
-        const parsed = JSON.parse(cleanedText);
+
+      if (!response || !response.text) {
+        console.warn('Invalid response from Gemini API in generateDescriptions. Falling back to defaults.');
         return {
-          purchaseDescription: parsed.purchaseDescription || 'International Purchase',
-          refundDescription: parsed.refundDescription || 'Tax Refund Service'
-        };
-      } catch (parseError) {
-        console.error('Parse error for descriptions:', parseError);
-        
-        // Advanced regex fallbacks for better extraction
-        const purchaseMatch = responseText.match(/purchaseDescription["'\s:]+["']([^"']+)["']/i);
-        const refundMatch = responseText.match(/refundDescription["'\s:]+["']([^"']+)["']/i);
-        
-        // Extract from json-like text even if not perfectly formatted
-        return {
-          purchaseDescription: purchaseMatch?.[1] || this.extractMeaningfulPhrase(responseText, 'purchase') || 'International Purchase',
-          refundDescription: refundMatch?.[1] || this.extractMeaningfulPhrase(responseText, 'refund') || 'Tax Refund Service'
+          purchaseDescription: imageAnalysis?.description || 'Automated Purchase Description (API error)',
+          refundDescription: 'Tax Refund Service (API error)',
         };
       }
-    } catch (error) {
-      console.error('Error generating descriptions:', error);
-      // Make fallbacks more specific based on context
-      const [amount, currency, country] = context.split(' ');
+
+      const responseText = response.text();
+      const purchaseMatch = responseText.match(/purchase: (.+)/);
+      const refundMatch = responseText.match(/refund: (.+)/);
+
+      const purchaseDescription = purchaseMatch?.[1]?.trim() || imageAnalysis?.description || 'International Purchase';
+      const refundDescription = refundMatch?.[1]?.trim() || 'Tax Refund Service';
+
       return {
-        purchaseDescription: this.getDefaultDescription(country, parseFloat(amount)),
-        refundDescription: this.getDefaultRefundDescription(country)
+        purchaseDescription: purchaseDescription,
+        refundDescription: refundDescription,
+      };
+    } catch (error) {
+      const fallbackPurchaseDescription = imageAnalysis?.description || 'Automated Purchase Description (fallback)';
+      const fallbackRefundDescription = 'Tax Refund Service (fallback)';
+
+      if (error.message && (error.message.includes('429 Too Many Requests') || error.message.includes('Quota exceeded'))) {
+        console.warn(`Quota exceeded in GeminiService.generateDescriptions. Falling back to defaults. Error: ${error.message}`);
+      } else {
+        console.error(`Error in GeminiService.generateDescriptions. Falling back to defaults. Error: ${error.message}`, error);
+      }
+
+      return {
+        purchaseDescription: fallbackPurchaseDescription,
+        refundDescription: fallbackRefundDescription,
       };
     }
   }
@@ -232,18 +214,18 @@ export class GeminiService {
   private stripMarkdownCodeBlocks(text: string): string {
     // Remove Markdown code block markers (```json and ```)
     let cleaned = text.replace(/```json\s+/g, '').replace(/```\s*$/g, '');
-    
+
     // If after cleaning we have a {, assume it's JSON
     if (cleaned.trim().startsWith('{')) {
       return cleaned.trim();
     }
-    
+
     // Try to extract JSON between code block markers if the first replace didn't work
     const jsonMatch = text.match(/```(?:json)?\s+(\{[\s\S]+?\})\s+```/);
     if (jsonMatch && jsonMatch[1]) {
       return jsonMatch[1].trim();
     }
-    
+
     return text; // Return original if no pattern matches
   }
 
@@ -252,21 +234,21 @@ export class GeminiService {
     // Search for typical patterns in the model's response
     const phrases = text.match(/["']([^"']{3,30})["']/g);
     if (!phrases) return null;
-    
+
     // Filter phrases by relevance to type
     const relevantPhrases = phrases.filter(phrase => {
       const p = phrase.toLowerCase();
       if (type === 'purchase') {
-        return p.includes('purchase') || p.includes('shopping') || 
-               p.includes('goods') || p.includes('store') || 
-               p.includes('luxury') || p.includes('buy');
+        return p.includes('purchase') || p.includes('shopping') ||
+          p.includes('goods') || p.includes('store') ||
+          p.includes('luxury') || p.includes('buy');
       } else {
-        return p.includes('refund') || p.includes('tax') || 
-               p.includes('vat') || p.includes('rebate') || 
-               p.includes('return');
+        return p.includes('refund') || p.includes('tax') ||
+          p.includes('vat') || p.includes('rebate') ||
+          p.includes('return');
       }
     });
-    
+
     if (relevantPhrases.length > 0) {
       return relevantPhrases[0].replace(/["']/g, '');
     }
@@ -286,10 +268,10 @@ export class GeminiService {
         'medical': 'Medical Services',
         'hotel': 'Hotel Stay'
       };
-      
+
       return categoryMap[category.toLowerCase()] || `${category} Purchase`;
     }
-    
+
     const countryMap = {
       'FR': 'French Luxury Purchase',
       'IT': 'Italian Designer Items',
@@ -301,10 +283,10 @@ export class GeminiService {
       'JP': 'Japanese Retail Purchase',
       'AE': 'Dubai Shopping Experience'
     };
-    
+
     // Add price categorization
     const priceCategory = amount < 200 ? 'Standard ' : amount < 500 ? 'Premium ' : 'Luxury ';
-    
+
     return countryMap[country] || `${priceCategory}International Purchase`;
   }
 
@@ -320,7 +302,7 @@ export class GeminiService {
       'JP': 'Japan Consumption Tax Refund',
       'AE': 'UAE Tax-Free Shopping'
     };
-    
+
     return refundMap[country] || 'International Tax Refund';
   }
 }

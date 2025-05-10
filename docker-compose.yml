@@ -9,6 +9,10 @@ services:
       - "27017:27017"
     volumes:
       - mongo_data:/data/db
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: example
+    # Ensure the volume is used before removing or recreating the container
 
   app:
     image: tayaa1/nomadly-backend:latest
@@ -19,7 +23,7 @@ services:
     ports:
       - "3005:3000"
     environment:
-      - MONGODB_URI=mongodb://mongo:27017/nomadly
+      - MONGODB_URI=mongodb://root:example@mongo:27017/nomadly?authSource=admin
       - NODE_ENV=production
       # Email configuration
       - MAIL_HOST=smtp.gmail.com
@@ -28,7 +32,6 @@ services:
       - MAIL_USER=nomadly.app2025@gmail.com
       - MAIL_PASSWORD=jqkh skhy ldqy nkuo
       - MAIL_FROM="Nomadly App" <nomadly.app2025@gmail.com>
-      # Other env vars as needed
 
   watchtower:
     image: containrrr/watchtower
@@ -41,8 +44,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       - app
-    env_file:
-      - .env
 
 volumes:
   mongo_data:
+    driver: local

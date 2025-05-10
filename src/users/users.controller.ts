@@ -117,7 +117,6 @@ export class UsersController {
   }
 
   @Get()
-  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Get all users' })
   @ApiResponse({ status: HttpStatus.OK, description: 'Return all users' })
   async findAll(): Promise<Partial<User>[]> {
