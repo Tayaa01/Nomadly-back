@@ -1,4 +1,4 @@
-import { Controller, Post, UploadedFile, UseInterceptors, Body, UseGuards, Request } from '@nestjs/common';
+import { Controller, Post, UploadedFile, UseInterceptors, Body, UseGuards, Request, BadRequestException } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiConsumes, ApiBody, ApiResponse } from '@nestjs/swagger';
 import { GeminiService } from '../gemini/gemini.service';
@@ -16,12 +16,12 @@ export class ImageCurrencyController {
     private readonly currencyConverterService: CurrencyConverterService,
     private readonly taxRefundService: TaxRefundService,
     private readonly transactionsService: TransactionsService,
-  ) {}
+  ) { }
 
   @Post('analyze-and-convert')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Basic bill analysis',
-    description: 'Analyze image and convert currency without tax refund information'
+    description: 'Analyze image for amount, use provided source currency if available (otherwise detect), and convert to target currency.'
   })
   @UseInterceptors(FileInterceptor('image'))
   @ApiConsumes('multipart/form-data')
@@ -32,62 +32,111 @@ export class ImageCurrencyController {
         image: {
           type: 'string',
           format: 'binary',
+          description: 'Image file of the bill/receipt.',
         },
         sourceCurrency: {
           type: 'string',
-          description: 'Source currency code (if not detected in image)',
-          required: ['false'],
+          description: 'Optional: Source currency code (e.g., USD). If provided, this will be used. Otherwise, detection from image is attempted.',
         },
         targetCurrency: {
           type: 'string',
-          description: 'Target currency code',
+          description: 'Target currency code (e.g., EUR). Required for conversion.',
         },
       },
+      required: ['image', 'targetCurrency'] // Explicitly state image and targetCurrency are top-level requirements
     },
   })
+  @ApiResponse({ status: 200, description: 'Analysis and conversion successful.' })
+  @ApiResponse({ status: 400, description: 'Invalid input, missing currency information, or image processing error.' })
   async analyzeAndConvert(
     @UploadedFile() file: Express.Multer.File,
-    @Body('sourceCurrency') sourceCurrency?: string,
+    @Body('sourceCurrency') inputSourceCurrency?: string,
     @Body('targetCurrency') targetCurrency?: string,
   ) {
+    if (!file) {
+      throw new BadRequestException('Image file is required.');
+    }
+
     try {
-      const analysis = await this.geminiService.analyzeImage(file.buffer);
-      const sourceAmount = analysis.amount;
-      const detectedCurrency = analysis.currency;
-      const finalSourceCurrency = detectedCurrency || sourceCurrency;
+      // 1. Analyze image to get amount and potentially detected currency
+      const imageScanResult = await this.geminiService.analyzeImage(file.buffer);
+      const detectedAmount = imageScanResult.amount;
+      const detectedCurrencyFromImage = imageScanResult.currency; // Store the originally detected currency
 
-      if (!finalSourceCurrency) {
+      // 2. Determine the source currency to be used for conversion
+      let finalSourceCurrencyUsed: string | null | undefined;
+
+      if (inputSourceCurrency && inputSourceCurrency.trim() !== '') {
+        finalSourceCurrencyUsed = inputSourceCurrency.trim().toUpperCase();
+      } else {
+        finalSourceCurrencyUsed = detectedCurrencyFromImage ? detectedCurrencyFromImage.toUpperCase() : null;
+      }
+
+      // 3. Validate that a source currency is available
+      if (!finalSourceCurrencyUsed) {
         return {
-          analysis,
-          message: 'No currency detected. Please provide source currency.',
+          imageAnalysis: {
+            detectedAmount,
+            detectedCurrency: detectedCurrencyFromImage,
+          },
+          conversionInput: {
+            sourceCurrencyUsed: null,
+            targetCurrency: targetCurrency?.trim().toUpperCase(),
+          },
+          conversionResult: null,
+          message: 'Source currency not detected from image and no valid source currency provided in input. Cannot perform conversion.',
         };
       }
 
-      if (!targetCurrency) {
+      // 4. Validate that a target currency is provided
+      const finalTargetCurrency = targetCurrency?.trim().toUpperCase();
+      if (!finalTargetCurrency) {
         return {
-          analysis,
-          message: 'Please provide target currency.',
+          imageAnalysis: {
+            detectedAmount,
+            detectedCurrency: detectedCurrencyFromImage,
+          },
+          conversionInput: {
+            sourceCurrencyUsed: finalSourceCurrencyUsed,
+            targetCurrency: null,
+          },
+          conversionResult: null,
+          message: 'Target currency not provided. Please specify a target currency for conversion.',
         };
       }
 
-      const conversion = await this.currencyConverterService.convertCurrency(
-        finalSourceCurrency,
-        targetCurrency,
-        sourceAmount,
+      // 5. Perform currency conversion
+      const conversionResult = await this.currencyConverterService.convertCurrency(
+        finalSourceCurrencyUsed,
+        finalTargetCurrency,
+        detectedAmount,
       );
 
-      return {
-        analysis,
-        conversion,
+      // 6. Return the structured result
+      const debugOutput = {
+        imageAnalysis: {
+          detectedAmount,
+          detectedCurrency: detectedCurrencyFromImage,
+        },
+        conversionInput: {
+          sourceCurrencyUsed: finalSourceCurrencyUsed,
+          targetCurrency: finalTargetCurrency,
+        },
+        conversionResult,
       };
+      console.log('analyze-and-convert debug:', JSON.stringify(debugOutput, null, 2));
+      return debugOutput;
     } catch (error) {
-      throw error;
+      console.error('Error during analyzeAndConvert:', error.message, error.stack);
+      // Consider rethrowing as HttpException for better error handling by NestJS
+      if (error instanceof BadRequestException) throw error;
+      throw new BadRequestException(`Processing error: ${error.message}`);
     }
   }
 
   @Post('analyze-with-tax')
   @UseGuards(JwtAuthGuard)
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Advanced bill analysis with transaction tracking',
     description: 'Analyze bill for amount, currency conversion and tourist tax refund eligibility'
   })
